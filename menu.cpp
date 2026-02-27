@@ -80,7 +80,7 @@ class Box {
 };
 
 Box box(640/2, 120);
-Box top(640/2, 1200);
+Box top(640/2, 35);
 Box selection1(90, 65);
 Box selection2(90, 65);
 Box selection3(90, 65);
@@ -110,6 +110,17 @@ public:
 		xres=640, yres=480;
 	}
 } g;
+
+static const char* menuSelect[] = {
+	"Play"
+	"Select Character"
+	"Quit"
+};
+
+static const int menuCount = (int)(sizeof(menuSelect) / sizeof(menuSelect[0]));
+static int menuSelected = 0;
+
+
 
 class X11_wrapper {
 private:
@@ -285,6 +296,16 @@ int check_keys(XEvent *e)
 		if (key == XK_Escape) {
 			return 1;
 		}
+		if (key == XK_Up || key == XK_w){
+			menuSelected = (menuSelected - 1 + menuCount) % menuCount;
+		}
+		if (key == XK_Down || key == XK_s){
+			menuSelected = (menuSelected - 1 + menuCount) % menuCount;
+		}
+		if (key == XK_Return || key == XK_space){
+			select_menu_option(menuSelected);
+		}
+		
 	}
 	return 0;
 }
@@ -298,6 +319,7 @@ void physics()
 
 void render_box()
 {
+	
     glColor3ub(box.color[0], box.color[1], box.color[2]);
     glPushMatrix();
     glTranslatef(box.pos[0], box.pos[1], 0.0f);
@@ -308,6 +330,86 @@ void render_box()
         glVertex2f(box.width/2, 0);
     glEnd();
     glPopMatrix();
+    
+    glColor3ub(top.color[0], top.color[1], top.color[2]);
+    glPushMatrix();
+    glTranslatef(top.pos[0], top.pos[1], 0.0f);
+    glBegin(GL_QUADS);
+        glVertex2f(-top.width/2, 0);
+        glVertex2f(-top.width/2, top.height);
+        glVertex2f(top.width/2, top.height);
+        glVertex2f(top.width/2, 0);
+    glEnd();
+    glPopMatrix();
+    
+}
+
+void select_menu_option(int i) 
+{
+	switch (i) {
+		case 0:
+			printf("Start Game selected\n");
+			break;
+		case 1:
+			printf("Options selected\n");
+			break;
+		case 2:
+			printf("Quit selected\n");
+			exit(0);
+			break;
+	}
+	
+}
+
+void highlight_bar(float cx, float cy, float w, float h) 
+{
+	 glColor3ub(255, 255, 255); 
+    glPushMatrix();
+    glTranslatef(cx, cy, 0.0f);
+    glBegin(GL_QUADS);
+        glVertex2f(-w/2, -h/2);
+        glVertex2f(-w/2,  h/2);
+        glVertex2f( w/2,  h/2);
+        glVertex2f( w/2, -h/2);
+    glEnd();
+    glPopMatrix();
+
+}
+
+void render_menu()
+{
+   
+    const int paddingX = 18;
+    const int paddingY = 18;
+    const int lineStep = 24;
+
+  
+    int left = (int)(box.pos[0] - box.width/2 + paddingX);
+    int topY = (int)(box.pos[1] + box.height - paddingY);
+
+    
+    float selY = (float)(topY - menuSelected * lineStep - 8);
+    float barCx = box.pos[0];
+    float barCy = selY;
+    float barW  = box.width - 20.0f;
+    float barH  = 22.0f;
+
+    
+    glDisable(GL_TEXTURE_2D);
+    draw_highlight_bar(barCx, barCy, barW, barH);
+    glEnable(GL_TEXTURE_2D);
+
+
+    Rect r;
+    r.center = 0;
+    r.left = left;
+    r.bot = topY;
+
+    for (int i = 0; i < menuCount; i++) {
+        unsigned int color = (i == menuSelected) ? 0x000000 : 0x222222;
+        const char *prefix = (i == menuSelected) ? "> " : "  ";
+        ggprint16(&r, lineStep, color, "%s%s", prefix, menuItems[i]);
+    }
 }
 
 void render()
