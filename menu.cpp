@@ -17,6 +17,8 @@
 #include <GL/glx.h>
 #include "fonts.h"
 
+
+
 enum GameState {
 	MENU, 
 	PLAY,
@@ -65,7 +67,7 @@ public:
 		unlink(ppmname);
 	}
 };
-Image img[1] = {"fish.jpg"};
+Image img[2] = {"fish.jpg", "fishing.jpg" };
 
 class Texture {
 public:
@@ -114,8 +116,10 @@ class Global {
 public:
 	int xres, yres;
 	Texture tex;
+	GLuint fishingTex;
 	Global() {
 		xres=640, yres=480;
+		fishingTex = 0;
 	}
 } g;
 
@@ -186,7 +190,7 @@ public:
 	void set_title() {
 		//Set the window title bar.
 		XMapWindow(dpy, win);
-		XStoreName(dpy, win, "scrolling background (seamless)");
+		XStoreName(dpy, win, "Pescado");
 	}
 	bool getXPending() {
 		return XPending(dpy);
@@ -266,10 +270,20 @@ void init_opengl(void)
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, 3, w, h, 0,
 							GL_RGB, GL_UNSIGNED_BYTE, g.tex.backImage->data);
+
 	g.tex.xc[0] = 0.0;
 	g.tex.xc[1] = 0.25;
 	g.tex.yc[0] = 0.0;
 	g.tex.yc[1] = 1.0;
+
+	glGenTextures(1, &g.fishingTex);
+	int pw = img[1].width;
+	int ph = img[1].height;
+	glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, pw, ph, 0,
+				GL_RGB, GL_UNSIGNED_BYTE, img[1].data);
 
 	initialize_fonts();
 }
@@ -323,9 +337,10 @@ int check_keys(XEvent *e)
 
 void physics()
 {
-	//move the background
-	g.tex.xc[0] += 0.001;
-	g.tex.xc[1] += 0.001;
+	if (gameState == MENU) {
+        g.tex.xc[0] += 0.001;
+        g.tex.xc[1] += 0.001;
+    }
 }
 
 void render_box()
@@ -447,11 +462,14 @@ void render()
     ggprint16(&r, 32, 0x00ff00f, "PESCADO PARTY");
 	}
 	else if (gameState == PLAY) {
-
-
-
-
-
+		glColor3f(1.0, 1.0, 1.0);
+    	glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+    	glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(0, 0);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(0, g.yres);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(g.xres, g.yres);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
+    	glEnd();
 
 	}
 
