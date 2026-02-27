@@ -15,7 +15,12 @@
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <GL/glx.h>
+#include <iostream>
+#include <random>
 #include "fonts.h"
+
+std::random_device rd;
+std::mt19937 gen(rd());
 
 class Image {
 public:
@@ -263,12 +268,31 @@ void init_opengl(void)
 	g.tex.yc[1] = 1.0;
 }
 
+//Random Gen for mouseClicks
+int randGen()
+{
+    //======================================================================
+    //Optimization Change
+    //previous code:
+    //  srand(time(0));
+    //  int randomNum  = rand() % 3;
+    //to code below
+    //change was made to make randGen more random
+    //======================================================================
+    //set a range for the num to generate between 10 and 20
+    std::uniform_int_distribution<> dis(10, 20);
+    int randNum = dis(gen);
+
+    return randNum;
+}
+
 void check_mouse(XEvent *e)
 {
 	//Did the mouse move?
 	//Was a mouse button clicked?
 	static int savex = 0;
 	static int savey = 0;
+    static int mouseClicks = 0;
 	//
 	if (e->type == ButtonRelease) {
 		return;
@@ -276,6 +300,14 @@ void check_mouse(XEvent *e)
 	if (e->type == ButtonPress) {
 		if (e->xbutton.button==1) {
 			//Left button is down
+            mouseClicks++;
+            printf("click \n");
+            fflush(stdout);
+            if (mouseClicks == 10) {
+                printf("threshold met! \n");
+                fflush(stdout);
+                mouseClicks = 0;
+            }
 		}
 		if (e->xbutton.button==3) {
 			//Right button is down
