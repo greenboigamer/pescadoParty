@@ -22,6 +22,15 @@
 std::random_device rd;
 std::mt19937 gen(rd());
 
+
+enum GameState {
+	MENU, 
+	PLAY,
+	CHARACTER
+};
+
+GameState gameState = MENU;
+
 class Image {
 public:
 	int width, height;
@@ -62,7 +71,7 @@ public:
 		unlink(ppmname);
 	}
 };
-Image img[1] = {"fish.jpg"};
+Image img[2] = {"fish.jpg", "fishing.jpg" };
 
 class Texture {
 public:
@@ -84,8 +93,8 @@ class Box {
         float yc[2];
 };
 
-Box box(640/2, 120);
-Box top(640/2, 35);
+Box box(800/2, 120);
+Box top(800/2, 35);
 Box selection1(90, 65);
 Box selection2(90, 65);
 Box selection3(90, 65);
@@ -94,7 +103,7 @@ Box::Box(float w, float h)
 {
     width = w;
     height = h;
-    pos[0] = 640/2;
+    pos[0] = 800/2;
     pos[1] = 30;
     color[0] = 0;
     color[1] = 255;
@@ -111,15 +120,18 @@ class Global {
 public:
 	int xres, yres;
 	Texture tex;
+	GLuint fishingTex;
 	Global() {
 		xres=640, yres=480;
+		fishingTex = 0;
 	}
 } g;
 
-static const char* menuSelect[] = {
-	"Play"
-	"Select Character"
-	"Quit"
+const int numOptions = 3;
+const char* menuSelect[numOptions] = {
+	"Play",
+	"Select Character",
+	"Quit",
 };
 
 static const int menuCount = (int)(sizeof(menuSelect) / sizeof(menuSelect[0]));
@@ -136,7 +148,7 @@ public:
 	X11_wrapper() {
 		GLint att[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None };
 		//GLint att[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, None };
-		setup_screen_res(640, 480);
+		setup_screen_res(800, 640);
 		dpy = XOpenDisplay(NULL);
 		if(dpy == NULL) {
 			printf("\n\tcannot connect to X server\n\n");
@@ -182,7 +194,7 @@ public:
 	void set_title() {
 		//Set the window title bar.
 		XMapWindow(dpy, win);
-		XStoreName(dpy, win, "scrolling background (seamless)");
+		XStoreName(dpy, win, "Pescado");
 	}
 	bool getXPending() {
 		return XPending(dpy);
@@ -262,10 +274,22 @@ void init_opengl(void)
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, 3, w, h, 0,
 							GL_RGB, GL_UNSIGNED_BYTE, g.tex.backImage->data);
+
 	g.tex.xc[0] = 0.0;
 	g.tex.xc[1] = 0.25;
 	g.tex.yc[0] = 0.0;
 	g.tex.yc[1] = 1.0;
+
+	glGenTextures(1, &g.fishingTex);
+	int pw = img[1].width;
+	int ph = img[1].height;
+	glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, 3, pw, ph, 0,
+				GL_RGB, GL_UNSIGNED_BYTE, img[1].data);
+
+	initialize_fonts();
 }
 
 //Random Gen for mouseClicks
@@ -332,7 +356,7 @@ int check_keys(XEvent *e)
 			menuSelected = (menuSelected - 1 + menuCount) % menuCount;
 		}
 		if (key == XK_Down || key == XK_s){
-			menuSelected = (menuSelected - 1 + menuCount) % menuCount;
+			menuSelected = (menuSelected + 1 + menuCount) % menuCount;
 		}
 		if (key == XK_Return || key == XK_space){
 			select_menu_option(menuSelected);
@@ -344,14 +368,15 @@ int check_keys(XEvent *e)
 
 void physics()
 {
-	//move the background
-	g.tex.xc[0] += 0.001;
-	g.tex.xc[1] += 0.001;
+	if (gameState == MENU) {
+        g.tex.xc[0] += 0.001;
+        g.tex.xc[1] += 0.001;
+    }
 }
 
 void render_box()
 {
-	
+	glDisable(GL_TEXTURE_2D);
     glColor3ub(box.color[0], box.color[1], box.color[2]);
     glPushMatrix();
     glTranslatef(box.pos[0], box.pos[1], 0.0f);
@@ -373,7 +398,7 @@ void render_box()
         glVertex2f(top.width/2, 0);
     glEnd();
     glPopMatrix();
-    
+    glEnable(GL_TEXTURE_2D);
 }
 
 void select_menu_option(int i) 
@@ -382,10 +407,13 @@ void select_menu_option(int i)
 		case 0:
 			glColor3ub(0, 0, 0); 
 			printf("Start Game selected\n");
+			gameState = PLAY;
+
 			break;
 		case 1:
 			glColor3ub(0, 0, 0); 
-			printf("Options selected\n");
+			printf("Character selected\n");
+			gameState = CHARACTER;
 			break;
 		case 2:
 			glColor3ub(0, 0, 0); 
@@ -413,42 +441,34 @@ void highlight_bar(float cx, float cy, float w, float h)
 
 void render_menu()
 {
-   
-    const int paddingX = 18;
-    const int paddingY = 18;
+    const int paddingX = 25;
+    const int paddingY = 25;
     const int lineStep = 24;
-
-  
     int left = (int)(box.pos[0] - box.width/2 + paddingX);
     int topY = (int)(box.pos[1] + box.height - paddingY);
-
-    
-    //float selY = (float)(topY - menuSelected * lineStep - 8);
-    // float barCx = box.pos[0];
-    // float barCy = selY;
-    // float barW  = box.width - 20.0f;
-    // float barH  = 22.0f;
-
-    
-    glDisable(GL_TEXTURE_2D);
-   	//highlight_bar(barCx, barCy, barW, barH);
-    glEnable(GL_TEXTURE_2D);
-
 
     Rect r;
     r.center = 0;
     r.left = left;
     r.bot = topY;
 
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     for (int i = 0; i < menuCount; i++) {
-        unsigned int color = (i == menuSelected) ? 0x000000 : 0x222222;
-        const char *prefix = (i == menuSelected) ? "> " : "  ";
-        ggprint16(&r, lineStep, color, "%s%s", prefix, menuSelect[i]);
+        unsigned int color = (menuSelected == i) ? 0x00ff0000 : 0x00000000;
+        if (i == menuSelected)
+            ggprint16(&r, lineStep, color, "> %s", menuSelect[i]);
+        else
+            ggprint16(&r, lineStep, color, "  %s", menuSelect[i]);
     }
+	glDisable(GL_BLEND);
+	
 }
 
 void render()
 {
+	if (gameState == MENU) {
 	glClear(GL_COLOR_BUFFER_BIT);
 	glColor3f(1.0, 1.0, 1.0);
 	glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
@@ -465,11 +485,28 @@ void render()
 
     render_box();
 	render_menu();
+	
     Rect r;
     r.center = 1;
     r.left = g.xres/2;
     r.bot = g.yres/2;
-    ggprint16(&r, 32, 0x000000, "Pescado Party");
+    ggprint16(&r, 32, 0x00ff00f, "PESCADO PARTY");
+	}
+	else if (gameState == PLAY) {
+		glColor3f(1.0, 1.0, 1.0);
+    	glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+    	glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(0, 0);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(0, g.yres);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(g.xres, g.yres);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
+    	glEnd();
+
+	}
+
+
+
+	
 }
 
 
