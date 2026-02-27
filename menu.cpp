@@ -348,12 +348,15 @@ void select_menu_option(int i)
 {
 	switch (i) {
 		case 0:
+			glColor3ub(0, 0, 0); 
 			printf("Start Game selected\n");
 			break;
 		case 1:
+			glColor3ub(0, 0, 0); 
 			printf("Options selected\n");
 			break;
 		case 2:
+			glColor3ub(0, 0, 0); 
 			printf("Quit selected\n");
 			exit(0);
 			break;
@@ -388,15 +391,15 @@ void render_menu()
     int topY = (int)(box.pos[1] + box.height - paddingY);
 
     
-    float selY = (float)(topY - menuSelected * lineStep - 8);
-    float barCx = box.pos[0];
-    float barCy = selY;
-    float barW  = box.width - 20.0f;
-    float barH  = 22.0f;
+    //float selY = (float)(topY - menuSelected * lineStep - 8);
+    // float barCx = box.pos[0];
+    // float barCy = selY;
+    // float barW  = box.width - 20.0f;
+    // float barH  = 22.0f;
 
     
     glDisable(GL_TEXTURE_2D);
-   	highlight_bar(barCx, barCy, barW, barH);
+   	//highlight_bar(barCx, barCy, barW, barH);
     glEnable(GL_TEXTURE_2D);
 
 
