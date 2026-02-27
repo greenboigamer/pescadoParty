@@ -119,7 +119,7 @@ static const char* menuSelect[] = {
 
 static const int menuCount = (int)(sizeof(menuSelect) / sizeof(menuSelect[0]));
 static int menuSelected = 0;
-
+void select_menu_option(int i);
 
 
 class X11_wrapper {
@@ -396,7 +396,7 @@ void render_menu()
 
     
     glDisable(GL_TEXTURE_2D);
-    draw_highlight_bar(barCx, barCy, barW, barH);
+   	highlight_bar(barCx, barCy, barW, barH);
     glEnable(GL_TEXTURE_2D);
 
 
@@ -408,7 +408,7 @@ void render_menu()
     for (int i = 0; i < menuCount; i++) {
         unsigned int color = (i == menuSelected) ? 0x000000 : 0x222222;
         const char *prefix = (i == menuSelected) ? "> " : "  ";
-        ggprint16(&r, lineStep, color, "%s%s", prefix, menuItems[i]);
+        ggprint16(&r, lineStep, color, "%s%s", prefix, menuSelect[i]);
     }
 }
 
