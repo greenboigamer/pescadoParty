@@ -429,7 +429,7 @@ void render()
 	glEnd();
 
     render_box();
-
+	render_menu();
     Rect r;
     r.center = 1;
     r.left = g.xres/2;
