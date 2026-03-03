@@ -71,7 +71,7 @@ public:
 		unlink(ppmname);
 	}
 };
-Image img[2] = {"fish.jpg", "fishing.jpg" };
+Image img[2] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg" };
 
 class Texture {
 public:
