@@ -18,59 +18,20 @@
 #include <iostream>
 #include <random>
 #include "fonts.h"
+#include "image.h"
 
 std::random_device rd;
 std::mt19937 gen(rd());
 
 
 enum GameState {
-	MENU, 
+	MENU,
 	PLAY,
 	CHARACTER
 };
 
 GameState gameState = MENU;
 
-class Image {
-public:
-	int width, height;
-	unsigned char *data;
-	~Image() { delete [] data; }
-	Image(const char *fname) {
-		if (fname[0] == '\0')
-			return;
-		char name[40];
-		strcpy(name, fname);
-		int slen = strlen(name);
-		name[slen-4] = '\0';
-		char ppmname[80];
-		sprintf(ppmname,"%s.ppm", name);
-		char ts[100];
-		sprintf(ts, "convert %s %s", fname, ppmname);
-		system(ts);
-		FILE *fpi = fopen(ppmname, "r");
-		if (fpi) {
-			char line[200];
-			fgets(line, 200, fpi);
-			fgets(line, 200, fpi);
-			//skip comments and blank lines
-			while (line[0] == '#' || strlen(line) < 2)
-				fgets(line, 200, fpi);
-			sscanf(line, "%i %i", &width, &height);
-			fgets(line, 200, fpi);
-			//get pixel data
-			int n = width * height * 3;			
-			data = new unsigned char[n];			
-			for (int i=0; i<n; i++)
-				data[i] = fgetc(fpi);
-			fclose(fpi);
-		} else {
-			printf("ERROR opening image: %s\n", ppmname);
-			exit(0);
-		}
-		unlink(ppmname);
-	}
-};
 Image img[2] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg" };
 
 class Texture {
@@ -159,7 +120,7 @@ public:
 		if(vi == NULL) {
 			printf("\n\tno appropriate visual found\n\n");
 			exit(EXIT_FAILURE);
-		} 
+		}
 		Colormap cmap = XCreateColormap(dpy, root, vi->visual, AllocNone);
 		XSetWindowAttributes swa;
 		swa.colormap = cmap;
@@ -361,7 +322,7 @@ int check_keys(XEvent *e)
 		if (key == XK_Return || key == XK_space){
 			select_menu_option(menuSelected);
 		}
-		
+
 	}
 	return 0;
 }
@@ -387,7 +348,7 @@ void render_box()
         glVertex2f(box.width/2, 0);
     glEnd();
     glPopMatrix();
-    
+
     glColor3ub(top.color[0], top.color[1], top.color[2]);
     glPushMatrix();
     glTranslatef(top.pos[0], top.pos[1], 0.0f);
@@ -401,32 +362,32 @@ void render_box()
     glEnable(GL_TEXTURE_2D);
 }
 
-void select_menu_option(int i) 
+void select_menu_option(int i)
 {
 	switch (i) {
 		case 0:
-			glColor3ub(0, 0, 0); 
+			glColor3ub(0, 0, 0);
 			printf("Start Game selected\n");
 			gameState = PLAY;
 
 			break;
 		case 1:
-			glColor3ub(0, 0, 0); 
+			glColor3ub(0, 0, 0);
 			printf("Character selected\n");
 			gameState = CHARACTER;
 			break;
 		case 2:
-			glColor3ub(0, 0, 0); 
+			glColor3ub(0, 0, 0);
 			printf("Quit selected\n");
 			exit(0);
 			break;
 	}
-	
+
 }
 
-void highlight_bar(float cx, float cy, float w, float h) 
+void highlight_bar(float cx, float cy, float w, float h)
 {
-	 glColor3ub(255, 255, 255); 
+	 glColor3ub(255, 255, 255);
     glPushMatrix();
     glTranslatef(cx, cy, 0.0f);
     glBegin(GL_QUADS);
@@ -437,6 +398,46 @@ void highlight_bar(float cx, float cy, float w, float h)
     glEnd();
     glPopMatrix();
 
+}
+
+void render_logo() {
+    static bool initialized = false;
+    static GLuint texture;
+    static int imgWidth, imgHeight;
+    static Image *img = NULL;
+
+    if (!initialized) {
+        img = new Image("./assets/images/logo.png");
+        imgWidth = img->width;
+        imgHeight = img->height;
+
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgWidth, imgHeight, 0,
+                GL_RGBA, GL_UNSIGNED_BYTE, buildAlphaData(img));
+
+        initialized = true;
+    }
+
+    float scale = 6.0f;
+    float w = imgWidth * scale;
+    float h = imgHeight * scale;
+    float x = (g.xres - w) / 2;
+    float y = g.yres - h - 70;
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(x, y);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(x, y + h);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(x + w, y + h);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(x + w, y);
+    glEnd();
+    glDisable(GL_BLEND);
 }
 
 void render_menu()
@@ -463,7 +464,7 @@ void render_menu()
             ggprint16(&r, lineStep, color, "  %s", menuSelect[i]);
     }
 	glDisable(GL_BLEND);
-	
+
 }
 
 void render()
@@ -473,24 +474,19 @@ void render()
 	glColor3f(1.0, 1.0, 1.0);
 	glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
 	glBegin(GL_QUADS);
-		glTexCoord2f(g.tex.xc[0], g.tex.yc[1]); 
+		glTexCoord2f(g.tex.xc[0], g.tex.yc[1]);
         glVertex2i(0,      0);
-		glTexCoord2f(g.tex.xc[0], g.tex.yc[0]); 
+		glTexCoord2f(g.tex.xc[0], g.tex.yc[0]);
         glVertex2i(0,      g.yres);
-		glTexCoord2f(g.tex.xc[1], g.tex.yc[0]); 
+		glTexCoord2f(g.tex.xc[1], g.tex.yc[0]);
         glVertex2i(g.xres, g.yres);
-		glTexCoord2f(g.tex.xc[1], g.tex.yc[1]); 
+		glTexCoord2f(g.tex.xc[1], g.tex.yc[1]);
         glVertex2i(g.xres, 0);
 	glEnd();
 
     render_box();
 	render_menu();
-	
-    Rect r;
-    r.center = 1;
-    r.left = g.xres/2;
-    r.bot = g.yres/2;
-    ggprint16(&r, 32, 0x00ff00f, "PESCADO PARTY");
+    render_logo();
 	}
 	else if (gameState == PLAY) {
 		glColor3f(1.0, 1.0, 1.0);
@@ -506,7 +502,7 @@ void render()
 
 
 
-	
+
 }
 
 
