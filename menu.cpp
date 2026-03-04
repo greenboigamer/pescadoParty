@@ -271,6 +271,12 @@ int randGen()
     return randNum;
 }
 
+int threshold()
+{
+    int limit = randGen();
+    return limit;
+}
+
 void check_mouse(XEvent *e)
 {
 	//Did the mouse move?
@@ -285,13 +291,19 @@ void check_mouse(XEvent *e)
 	if (e->type == ButtonPress) {
 		if (e->xbutton.button==1) {
 			//Left button is down
-            mouseClicks++;
             printf("click \n");
             fflush(stdout);
-            if (mouseClicks == 10) {
-                printf("threshold met! \n");
-                fflush(stdout);
-                mouseClicks = 0;
+            if (gameState == PLAY) {
+                mouseClicks++;
+                if (mouseClicks == 10) {
+                    printf("threshold met! \n");
+                    fflush(stdout);
+                    mouseClicks = 0;
+                    int amount = threshold();
+                    printf("%i\n", amount);
+                    fflush(stdout);
+                    //amount = 0;
+                }
             }
 		}
 		if (e->xbutton.button==3) {
