@@ -412,33 +412,7 @@ void highlight_bar(float cx, float cy, float w, float h)
 
 }
 
-void render_logo() {
-    static bool initialized = false;
-    static GLuint texture;
-    static int imgWidth, imgHeight;
-    static Image *img = NULL;
-
-    if (!initialized) {
-        img = new Image("./assets/images/logo.png");
-        imgWidth = img->width;
-        imgHeight = img->height;
-
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgWidth, imgHeight, 0,
-                GL_RGBA, GL_UNSIGNED_BYTE, buildAlphaData(img));
-
-        initialized = true;
-    }
-
-    float scale = 6.0f;
-    float w = imgWidth * scale;
-    float h = imgHeight * scale;
-    float x = (g.xres - w) / 2;
-    float y = g.yres - h - 70;
-
+void render_image(GLuint texture, float x, float y, float w, float h) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glColor4f(1.0, 1.0, 1.0, 1.0);
@@ -450,6 +424,67 @@ void render_logo() {
         glTexCoord2f(1.0f, 1.0f); glVertex2f(x + w, y);
     glEnd();
     glDisable(GL_BLEND);
+}
+
+GLuint load_texture(const char* filepath) {
+    Image* img = new Image(filepath);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img->width, img->height, 0,
+            GL_RGBA, GL_UNSIGNED_BYTE, buildAlphaData(img));
+
+    delete img;
+    return texture;
+}
+
+void render_logo() {
+    static bool initialized = false;
+    static GLuint texture;
+    static int imgWidth, imgHeight;
+
+    if (!initialized) {
+        Image* img = new Image("./assets/images/logo.png");
+        imgWidth = img->width;
+        imgHeight = img->height;
+        texture = load_texture("./assets/images/logo.png");
+        delete img;
+        initialized = true;
+    }
+
+    float scale = 6.0f;
+    float w = imgWidth * scale;
+    float h = imgHeight * scale;
+    float x = (g.xres - w) / 2;
+    float y = g.yres - h - 70;
+
+    render_image(texture, x, y, w, h);
+}
+
+void render_boat() {
+    static bool initialized = false;
+    static GLuint texture;
+    static int imgWidth, imgHeight;
+
+    if (!initialized) {
+        Image* img = new Image("./assets/images/boat.png");
+        imgWidth = img->width;
+        imgHeight = img->height;
+        delete img;
+        texture = load_texture("./assets/images/boat.png");
+        initialized = true;
+    }
+
+    float scale = 4.0f;
+    float w = imgWidth * scale;
+    float h = imgHeight * scale;
+    float x = ((g.xres - w) / 2) + 100;
+    float y = -30;
+
+    render_image(texture, x, y, w, h);
 }
 
 void render_menu()
@@ -509,24 +544,10 @@ void render()
         glTexCoord2f(1.0f, 0.0f); glVertex2i(g.xres, g.yres);
         glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
     	glEnd();
-
+        render_boat();
 	}
 
 
 
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
