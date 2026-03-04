@@ -1,12 +1,5 @@
-//
-//program: background.cpp
-//author:  Gordon Griesel
-//date:    2017 - 2018
-//
-//The position of the background QUAD does not change.
-//Just the texture coordinates change.
-//In this example, only the x coordinates change.
-//
+// edwin aviles, kian hernando, & simon
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,8 +13,10 @@
 #include "fonts.h"
 #include "image.h"
 
-std::random_device rd;
-std::mt19937 gen(rd());
+using namespace std;
+
+random_device rd;
+mt19937 gen(rd());
 
 
 enum GameState {
@@ -32,7 +27,7 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[2] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg" };
+Image img[4] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png" };
 
 class Texture {
 public:
@@ -81,10 +76,17 @@ class Global {
 public:
 	int xres, yres;
 	Texture tex;
-	GLuint fishingTex;
+	GLuint fishingTex; //play background
+	GLuint pescadoTex; //spinning senor pescado
+	GLuint partyTex; // 
+	
+	float logoAngle;
 	Global() {
 		xres=640, yres=480;
 		fishingTex = 0;
+		pescadoTex = 0;
+		logoAngle = 0.0f;
+		partyTex = 0;
 	}
 } g;
 
@@ -210,6 +212,7 @@ int main()
 
 void init_opengl(void)
 {
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	//OpenGL initialization
 	glViewport(0, 0, g.xres, g.yres);
 	//Initialize matrices
@@ -227,6 +230,7 @@ void init_opengl(void)
 	//
 	g.tex.backImage = &img[0];
 	//create opengl texture elements
+	// menu background
 	glGenTextures(1, &g.tex.backTexture);
 	int w = g.tex.backImage->width;
 	int h = g.tex.backImage->height;
@@ -241,6 +245,7 @@ void init_opengl(void)
 	g.tex.yc[0] = 0.0;
 	g.tex.yc[1] = 1.0;
 
+	//play state background
 	glGenTextures(1, &g.fishingTex);
 	int pw = img[1].width;
 	int ph = img[1].height;
@@ -250,6 +255,31 @@ void init_opengl(void)
 	glTexImage2D(GL_TEXTURE_2D, 0, 3, pw, ph, 0,
 				GL_RGB, GL_UNSIGNED_BYTE, img[1].data);
 
+	//pescado spinning logo
+	unsigned char *alphaDataPescado = buildAlphaData(&img[2]);
+	glGenTextures(1, &g.pescadoTex);
+	glBindTexture(GL_TEXTURE_2D, g.pescadoTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+				img[2].width, img[2].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataPescado);
+	free(alphaDataPescado);
+
+	//pescado party logo
+	unsigned char *alphaDataParty = buildAlphaData(&img[3]);
+	glGenTextures(1, &g.partyTex);
+	glBindTexture(GL_TEXTURE_2D, g.partyTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[3].width, img[3].height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataParty);
+
+
+	free(alphaDataParty);
 	initialize_fonts();
 }
 
@@ -344,6 +374,11 @@ void physics()
 	if (gameState == MENU) {
         g.tex.xc[0] += 0.001;
         g.tex.xc[1] += 0.001;
+
+		g.logoAngle += 3.0f;          // pescado spin speed
+    	if (g.logoAngle >= 360.0f)
+        	g.logoAngle -= 360.0f;
+		
     }
 }
 
@@ -412,57 +447,68 @@ void highlight_bar(float cx, float cy, float w, float h)
 
 }
 
-void render_image(GLuint texture, float x, float y, float w, float h) {
+
+void render_senor_pescado() {
+
+    float boxRight  = box.pos[0] + box.width * 0.5f;
+    float boxBottom = box.pos[1];
+    float boxTop    = box.pos[1] + box.height;
+    
+    float drawW = 70.0f;
+    float drawH = 70.0f;
+
+   
+    float padRight = 25.0f;
+    float cx = boxRight - padRight - drawW * 0.5f;
+    float cy = (boxBottom + boxTop) * 0.5f;
+
+    glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glColor4f(1,1,1,1);
+    glBindTexture(GL_TEXTURE_2D, g.pescadoTex);
+
+	glPushMatrix();
+	glTranslatef(cx, cy, 0.0f); 
+	glRotatef(g.logoAngle, 0.0f, 0.0f, 1.0f);
+
+   	glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(-drawW/2, -drawH/2);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(-drawW/2,  drawH/2);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f( drawW/2,  drawH/2);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f( drawW/2, -drawH/2);
+    glEnd();
+
+	glPopMatrix();
+
+    glDisable(GL_BLEND);
+
+}
+
+void render_logo() 
+{
+
+    float w = 500.0f;
+    float h = 240.0f;
+    float x = (g.xres - w) / 2;
+    float y = g.yres - h - 70;
+
+	glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+
     glColor4f(1.0, 1.0, 1.0, 1.0);
-    glBindTexture(GL_TEXTURE_2D, texture);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, g.partyTex);
     glBegin(GL_QUADS);
         glTexCoord2f(0.0f, 1.0f); glVertex2f(x, y);
         glTexCoord2f(0.0f, 0.0f); glVertex2f(x, y + h);
         glTexCoord2f(1.0f, 0.0f); glVertex2f(x + w, y + h);
         glTexCoord2f(1.0f, 1.0f); glVertex2f(x + w, y);
     glEnd();
-    glDisable(GL_BLEND);
+	glDisable(GL_BLEND);
 }
 
-GLuint load_texture(const char* filepath) {
-    Image* img = new Image(filepath);
-
-    GLuint texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img->width, img->height, 0,
-            GL_RGBA, GL_UNSIGNED_BYTE, buildAlphaData(img));
-
-    delete img;
-    return texture;
-}
-
-void render_logo() {
-    static bool initialized = false;
-    static GLuint texture;
-    static int imgWidth, imgHeight;
-
-    if (!initialized) {
-        Image* img = new Image("./assets/images/logo.png");
-        imgWidth = img->width;
-        imgHeight = img->height;
-        texture = load_texture("./assets/images/logo.png");
-        delete img;
-        initialized = true;
-    }
-
-    float scale = 6.0f;
-    float w = imgWidth * scale;
-    float h = imgHeight * scale;
-    float x = (g.xres - w) / 2;
-    float y = g.yres - h - 70;
-
-    render_image(texture, x, y, w, h);
-}
 
 void render_boat() {
     static bool initialized = false;
@@ -490,8 +536,8 @@ void render_boat() {
 void render_menu()
 {
     const int paddingX = 25;
-    const int paddingY = 25;
-    const int lineStep = 24;
+    const int paddingY = 40;
+    const int lineStep = 30;
     int left = (int)(box.pos[0] - box.width/2 + paddingX);
     int topY = (int)(box.pos[1] + box.height - paddingY);
 
@@ -534,6 +580,8 @@ void render()
     render_box();
 	render_menu();
     render_logo();
+	render_senor_pescado();
+
 	}
 	else if (gameState == PLAY) {
 		glColor3f(1.0, 1.0, 1.0);
