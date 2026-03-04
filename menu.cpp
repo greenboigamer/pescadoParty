@@ -27,7 +27,13 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[4] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png" };
+Image img[5] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
+ "./assets/images/boat.png" };
+
+// for boat machanics 
+float boatBobTime = 0.0f;
+float boatBobAmp = 10.0f;
+float boatBobSpeed = 0.08f;
 
 class Texture {
 public:
@@ -78,8 +84,8 @@ public:
 	Texture tex;
 	GLuint fishingTex; //play background
 	GLuint pescadoTex; //spinning senor pescado
-	GLuint partyTex; // 
-	
+	GLuint partyTex; // pescado party logo
+	GLuint boatTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -87,6 +93,7 @@ public:
 		pescadoTex = 0;
 		logoAngle = 0.0f;
 		partyTex = 0;
+		boatTex = 0;
 	}
 } g;
 
@@ -280,21 +287,24 @@ void init_opengl(void)
 
 
 	free(alphaDataParty);
+
+
+	unsigned char *alphaDataBoat = buildAlphaData(&img[4]);
+	glGenTextures(1, &g.boatTex);
+	glBindTexture(GL_TEXTURE_2D, g.boatTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[4].width, img[4].height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataBoat);
+
+	free(alphaDataBoat);
 	initialize_fonts();
 }
 
 //Random Gen for mouseClicks
 int randGen()
 {
-    //======================================================================
-    //Optimization Change
-    //previous code:
-    //  srand(time(0));
-    //  int randomNum  = rand() % 3;
-    //to code below
-    //change was made to make randGen more random
-    //======================================================================
-    //set a range for the num to generate between 10 and 20
     std::uniform_int_distribution<> dis(10, 20);
     int randNum = dis(gen);
 
@@ -378,8 +388,12 @@ void physics()
 		g.logoAngle += 3.0f;          // pescado spin speed
     	if (g.logoAngle >= 360.0f)
         	g.logoAngle -= 360.0f;
-		
-    }
+	}
+
+	if (gameState == PLAY) {
+		boatBobTime += boatBobSpeed;
+	}	
+    
 }
 
 void render_box()
@@ -511,26 +525,31 @@ void render_logo()
 
 
 void render_boat() {
-    static bool initialized = false;
-    static GLuint texture;
-    static int imgWidth, imgHeight;
+   
+    float w = 300.0f;
+    float h = 400.0f;
+    float cx = g.xres / 2.0f;
+    float cy = (g.yres / 2.0f) - 70.0f;
 
-    if (!initialized) {
-        Image* img = new Image("./assets/images/boat.png");
-        imgWidth = img->width;
-        imgHeight = img->height;
-        delete img;
-        texture = load_texture("./assets/images/boat.png");
-        initialized = true;
-    }
+	float bob = sinf(boatBobTime) * boatBobAmp;
 
-    float scale = 4.0f;
-    float w = imgWidth * scale;
-    float h = imgHeight * scale;
-    float x = ((g.xres - w) / 2) + 100;
-    float y = -30;
+	glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
 
-    render_image(texture, x, y, w, h);
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, g.boatTex);
+	glPushMatrix();
+	glTranslatef(cx, cy + bob, 0.0f);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2, -h/2);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2, h/2);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(w/2, h/2);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(w/2, -h/2);
+    glEnd();
+	glDisable(GL_BLEND);
+	glPopMatrix();
+    
 }
 
 void render_menu()
