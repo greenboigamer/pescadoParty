@@ -27,7 +27,7 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[5] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
+Image img[5] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
  "./assets/images/boat.png" };
 
 // for boat machanics 
@@ -529,7 +529,7 @@ void render_boat() {
     float w = 300.0f;
     float h = 400.0f;
     float cx = g.xres / 2.0f;
-    float cy = (g.yres / 2.0f) - 90.0f;
+    float cy = (g.yres / 2.0f) - 80.0f;
 
 	float bob = sinf(boatBobTime) * boatBobAmp;
 
