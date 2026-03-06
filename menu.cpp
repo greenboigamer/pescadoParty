@@ -31,9 +31,9 @@ Image img[5] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./as
  "./assets/images/boat.png" };
 
 // for boat machanics 
-float boatBobTime = 0.0f;
-float boatBobAmp = 10.0f;
-float boatBobSpeed = 0.08f;
+float boatBobTime = 0.5f;
+float boatBobAmp = 3.0f;
+float boatBobSpeed = 0.20f;
 
 class Texture {
 public:
@@ -529,7 +529,7 @@ void render_boat() {
     float w = 300.0f;
     float h = 400.0f;
     float cx = g.xres / 2.0f;
-    float cy = (g.yres / 2.0f) - 70.0f;
+    float cy = (g.yres / 2.0f) - 90.0f;
 
 	float bob = sinf(boatBobTime) * boatBobAmp;
 
