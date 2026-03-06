@@ -27,7 +27,7 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[6] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
+Image img[6] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
  "./assets/images/boat.png", "./assets/images/milking_fish.png" };
 
 // for boat machanics 
