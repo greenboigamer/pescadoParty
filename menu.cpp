@@ -572,7 +572,7 @@ void render_boat() {
     float w = 300.0f;
     float h = 400.0f;
     float cx = g.xres / 2.0f;
-    float cy = (g.yres / 2.0f) - 90.0f;
+    float cy = (g.yres / 2.0f) - 80.0f;
 
 	float bob = sinf(boatBobTime) * boatBobAmp;
 
