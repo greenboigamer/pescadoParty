@@ -27,8 +27,8 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[5] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
- "./assets/images/boat.png" };
+Image img[6] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./assets/images/senorpescado.png", "./assets/images/logo.png", 
+ "./assets/images/boat.png", "./assets/images/milking_fish.png" };
 
 // for boat machanics 
 float boatBobTime = 0.5f;
@@ -86,6 +86,7 @@ public:
 	GLuint pescadoTex; //spinning senor pescado
 	GLuint partyTex; // pescado party logo
 	GLuint boatTex;
+	GLuint fishOneTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -94,6 +95,7 @@ public:
 		logoAngle = 0.0f;
 		partyTex = 0;
 		boatTex = 0;
+		fishOneTex = 0;
 	}
 } g;
 
@@ -299,6 +301,19 @@ void init_opengl(void)
                  GL_RGBA, GL_UNSIGNED_BYTE, alphaDataBoat);
 
 	free(alphaDataBoat);
+
+    //milking fish
+	unsigned char *alphaDataMilkingFish = buildAlphaData(&img[5]);
+	glGenTextures(1, &g.fishOneTex);
+	glBindTexture(GL_TEXTURE_2D, g.fishOneTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[5].width, img[5].height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataMilkingFish);
+
+	free(alphaDataMilkingFish);
+
 	initialize_fonts();
 }
 
@@ -552,6 +567,34 @@ void render_boat() {
     
 }
 
+void render_fish() {
+   
+    float w = 100.0f;
+    float h = 90.0f;
+    float cx = g.xres * 0.8f;
+    float cy = (g.yres / 2.0f) - 200.0f;
+
+	float bob = sinf(boatBobTime) * boatBobAmp;
+
+	glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, g.fishOneTex);
+	glPushMatrix();
+	glTranslatef(cx, cy + bob, 0.0f);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2, -h/2);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2, h/2);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(w/2, h/2);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(w/2, -h/2);
+    glEnd();
+	glDisable(GL_BLEND);
+	glPopMatrix();
+    
+}
+
 void render_menu()
 {
     const int paddingX = 25;
@@ -612,6 +655,7 @@ void render()
         glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
     	glEnd();
         render_boat();
+        render_fish();
 	}
 
 
