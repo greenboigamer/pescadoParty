@@ -22,6 +22,7 @@ mt19937 gen(rd());
 enum GameState {
 	MENU,
 	PLAY,
+	FISHING,
 	CHARACTER
 };
 
@@ -34,6 +35,16 @@ Image img[6] = {"./assets/images/fish.jpg", "./assets/images/fishing.jpg", "./as
 float boatBobTime = 0.5f;
 float boatBobAmp = 3.0f;
 float boatBobSpeed = 0.20f;
+
+// for milk fish machanics 
+float milkFishBobTime = 0.2f;
+float milkFishBobAmp = 5.0f;
+float milkFishBobSpeed = 0.50f;
+
+// for milk fish side-to-side movement
+float fishX = 0.0f;        // initialized after g is ready
+float fishSpeedX = 2.5f;   // pixels per frame, adjust for faster/slower
+bool fishFacingRight = true;
 
 class Texture {
 public:
@@ -315,6 +326,7 @@ void init_opengl(void)
 	free(alphaDataMilkingFish);
 
 	initialize_fonts();
+    fishX = g.xres * 0.8f;  // starting x position for milk fish
 }
 
 //Random Gen for mouseClicks
@@ -350,6 +362,10 @@ void check_mouse(XEvent *e)
             fflush(stdout);
             if (gameState == PLAY) {
                 mouseClicks++;
+                if (mouseClicks == 1) {
+			        printf("Fishing Game Started\n");
+                    gameState = FISHING;
+                }
                 if (mouseClicks == 10) {
                     printf("threshold met! \n");
                     fflush(stdout);
@@ -405,10 +421,22 @@ void physics()
         	g.logoAngle -= 360.0f;
 	}
 
-	if (gameState == PLAY) {
+	if (gameState == PLAY || gameState == FISHING) {
 		boatBobTime += boatBobSpeed;
+		milkFishBobTime += milkFishBobSpeed;
 	}	
-    
+    if (gameState == FISHING) {
+		float halfW = 75.0f;  // half of fish width (150/2)
+		fishX += fishFacingRight ? fishSpeedX : -fishSpeedX;
+		if (fishX + halfW >= g.xres) {
+			fishX = g.xres - halfW;
+			fishFacingRight = false;
+		}
+		if (fishX - halfW <= 0) {
+			fishX = halfW;
+			fishFacingRight = true;
+		}
+	}
 }
 
 void render_box()
@@ -569,12 +597,16 @@ void render_boat() {
 
 void render_fish() {
    
-    float w = 100.0f;
-    float h = 90.0f;
-    float cx = g.xres * 0.8f;
+    float w = 150.0f;
+    float h = 120.0f;
+    float cx = fishX;
     float cy = (g.yres / 2.0f) - 200.0f;
 
-	float bob = sinf(boatBobTime) * boatBobAmp;
+	float bob = sinf(milkFishBobTime) * milkFishBobAmp;
+
+    // flip texture coords horizontally based on direction
+	float texLeft  = fishFacingRight ? 0.0f : 1.0f;
+	float texRight = fishFacingRight ? 1.0f : 0.0f;
 
 	glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
@@ -585,10 +617,10 @@ void render_fish() {
 	glPushMatrix();
 	glTranslatef(cx, cy + bob, 0.0f);
     glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2, -h/2);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2, h/2);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(w/2, h/2);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(w/2, -h/2);
+        glTexCoord2f(texLeft, 1.0f); glVertex2f(-w/2, -h/2);
+        glTexCoord2f(texLeft, 0.0f); glVertex2f(-w/2, h/2);
+        glTexCoord2f(texRight, 0.0f); glVertex2f(w/2, h/2);
+        glTexCoord2f(texRight, 1.0f); glVertex2f(w/2, -h/2);
     glEnd();
 	glDisable(GL_BLEND);
 	glPopMatrix();
@@ -646,6 +678,7 @@ void render()
 
 	}
 	else if (gameState == PLAY) {
+        glClear(GL_COLOR_BUFFER_BIT);
 		glColor3f(1.0, 1.0, 1.0);
     	glBindTexture(GL_TEXTURE_2D, g.fishingTex);
     	glBegin(GL_QUADS);
@@ -655,10 +688,19 @@ void render()
         glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
     	glEnd();
         render_boat();
+	}
+	else if (gameState == FISHING) {
+        glClear(GL_COLOR_BUFFER_BIT);
+        glColor3f(1.0, 1.0, 1.0);
+        glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(0, 0);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(0, g.yres);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(g.xres, g.yres);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
+        glEnd();
+        render_boat();
         render_fish();
 	}
-
-
-
 
 }
