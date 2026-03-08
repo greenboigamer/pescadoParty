@@ -28,9 +28,9 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[6] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
+Image img[7] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/boat.png", 
-    "./assets/images/milking_fish.png" };
+    "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png"};
 
 // for boat machanics 
 float boatBobTime = 0.5f;
@@ -46,6 +46,14 @@ float milkFishBobSpeed = 0.50f;
 float fishX = 0.0f;        // initialized after g is ready
 float fishSpeedX = 2.5f;   // pixels per frame, adjust for faster/slower
 bool fishFacingRight = true;
+
+// for reynboh pescado bob and movement
+float reynbohBobTime = 0.0f;
+float reynbohBobAmp = 4.0f;
+float reynbohBobSpeed = 0.35f;
+float reynbohX = 0.0f;       // initialized in init_opengl
+float reynbohSpeedX = 3.5f;
+bool reynbohFacingRight = false; // starts moving left
 
 class Texture {
 public:
@@ -99,6 +107,7 @@ public:
 	GLuint partyTex; // pescado party logo
 	GLuint boatTex;
 	GLuint fishOneTex;
+	GLuint reynbohTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -108,6 +117,7 @@ public:
 		partyTex = 0;
 		boatTex = 0;
 		fishOneTex = 0;
+		reynbohTex = 0;
 	}
 } g;
 
@@ -326,8 +336,20 @@ void init_opengl(void)
 
 	free(alphaDataMilkingFish);
 
+	//reynboh pescado
+	unsigned char *alphaDataReynboh = buildAlphaData(&img[6]);
+	glGenTextures(1, &g.reynbohTex);
+	glBindTexture(GL_TEXTURE_2D, g.reynbohTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[6].width, img[6].height, 0,
+				 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataReynboh);
+	free(alphaDataReynboh);
+
 	initialize_fonts();
     fishX = g.xres * 0.8f;  // starting x position for milk fish
+	reynbohX = g.xres * 0.2f; // starting x position for reynboh
 }
 
 //Random Gen for mouseClicks
@@ -425,9 +447,10 @@ void physics()
 	if (gameState == PLAY || gameState == FISHING) {
 		boatBobTime += boatBobSpeed;
 		milkFishBobTime += milkFishBobSpeed;
+		reynbohBobTime += reynbohBobSpeed;
 	}	
     if (gameState == FISHING) {
-		float halfW = 75.0f;  // half of fish width (150/2)
+		float halfW = 75.0f;
 		fishX += fishFacingRight ? fishSpeedX : -fishSpeedX;
 		if (fishX + halfW >= g.xres) {
 			fishX = g.xres - halfW;
@@ -436,6 +459,17 @@ void physics()
 		if (fishX - halfW <= 0) {
 			fishX = halfW;
 			fishFacingRight = true;
+		}
+
+		float reynbohHalfW = 60.0f;
+		reynbohX += reynbohFacingRight ? reynbohSpeedX : -reynbohSpeedX;
+		if (reynbohX + reynbohHalfW >= g.xres) {
+			reynbohX = g.xres - reynbohHalfW;
+			reynbohFacingRight = false;
+		}
+		if (reynbohX - reynbohHalfW <= 0) {
+			reynbohX = reynbohHalfW;
+			reynbohFacingRight = true;
 		}
 	}
 }
@@ -628,6 +662,37 @@ void render_fish() {
     
 }
 
+void render_reynboh_fish() {
+
+    float w = 120.0f;
+    float h = 100.0f;
+    float cx = reynbohX;
+    float cy = (g.yres / 2.0f) - 100.0f; // different height than milking fish
+
+	float bob = sinf(reynbohBobTime) * reynbohBobAmp;
+
+	float texLeft  = reynbohFacingRight ? 0.0f : 1.0f;
+	float texRight = reynbohFacingRight ? 1.0f : 0.0f;
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+
+	glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBindTexture(GL_TEXTURE_2D, g.reynbohTex);
+	glPushMatrix();
+	glTranslatef(cx, cy + bob, 0.0f);
+	glBegin(GL_QUADS);
+		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
+		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
+		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
+		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
+	glEnd();
+	glDisable(GL_BLEND);
+	glPopMatrix();
+
+}
+
 void render_menu()
 {
     const int paddingX = 25;
@@ -702,6 +767,7 @@ void render()
         glEnd();
         render_boat();
         render_fish();
+        render_reynboh_fish();
 	}
 
 }
