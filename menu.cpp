@@ -39,47 +39,22 @@ float boatBobTime = 0.5f;
 float boatBobAmp = 3.0f;
 float boatBobSpeed = 0.20f;
 
-// for milk fish machanics 
-float milkFishBobTime = 0.2f;
-float milkFishBobAmp = 5.0f;
-float milkFishBobSpeed = 0.50f;
+// Fish pool - properties per fish type
+// Order: 0=milking_fish, 1=reynboh, 2=death_snapper, 3=exo_trout, 4=grieselly
+const int NUM_FISH = 5;
+const float FISH_BOB_AMP[NUM_FISH]   = { 5.0f,  4.0f,  6.0f,  3.5f,  5.5f  };
+const float FISH_BOB_SPEED[NUM_FISH] = { 0.50f, 0.35f, 0.45f, 0.28f, 0.40f };
+const float FISH_SPEED[NUM_FISH]     = { 2.5f,  3.5f,  4.5f,  3.0f,  5.0f  };
+const float FISH_CY[NUM_FISH]        = { 90.0f, 60.0f, 30.0f, 120.0f, 150.0f };
+const float FISH_W[NUM_FISH]         = { 150.0f, 120.0f, 130.0f, 140.0f, 125.0f };
+const float FISH_H[NUM_FISH]         = { 120.0f, 100.0f, 110.0f, 110.0f, 105.0f };
 
-// for milk fish side-to-side movement
-float fishX = 0.0f;        // initialized after g is ready
-float fishSpeedX = 2.5f;   // pixels per frame, adjust for faster/slower
-bool fishFacingRight = true;
-
-// for reynboh pescado bob and movement
-float reynbohBobTime = 0.0f;
-float reynbohBobAmp = 4.0f;
-float reynbohBobSpeed = 0.35f;
-float reynbohX = 0.0f;
-float reynbohSpeedX = 3.5f;
-bool reynbohFacingRight = false;
-
-// for death snapper bob and movement
-float deathSnapperBobTime = 0.1f;
-float deathSnapperBobAmp = 6.0f;
-float deathSnapperBobSpeed = 0.45f;
-float deathSnapperX = 0.0f;
-float deathSnapperSpeedX = 4.5f;
-bool deathSnapperFacingRight = true;
-
-// for exo trout bob and movement
-float exoTroutBobTime = 0.3f;
-float exoTroutBobAmp = 3.5f;
-float exoTroutBobSpeed = 0.28f;
-float exoTroutX = 0.0f;
-float exoTroutSpeedX = 3.0f;
-bool exoTroutFacingRight = true;
-
-// for grieselly fish bob and movement
-float griesellyBobTime = 0.6f;
-float griesellyBobAmp = 5.5f;
-float griesellyBobSpeed = 0.40f;
-float griesellyX = 0.0f;
-float griesellySpeedX = 5.0f;
-bool griesellyFacingRight = false;
+// Two active fish slots: slot 0 travels right, slot 1 travels left
+// Each slot independently cycles through the fish pool
+int   slotFish[2]  = { 0, 1 };   // which fish type each slot is showing
+float slotX[2]     = { 0.0f, 0.0f };
+float slotBob[2]   = { 0.0f, 0.5f };
+// slot 0 always goes right, slot 1 always goes left
 
 class Texture {
 public:
@@ -413,11 +388,13 @@ void init_opengl(void)
 	free(alphaDataGrieselly);
 
 	initialize_fonts();
-	fishX         = g.xres * 0.8f;
-	reynbohX      = g.xres * 0.2f;
-	deathSnapperX = g.xres * 0.5f;
-	exoTroutX     = g.xres * 0.65f;
-	griesellyX    = g.xres * 0.35f;
+	// slot 0 starts off left edge moving right, slot 1 starts off right edge moving left
+	slotFish[0] = 0;
+	slotFish[1] = 1;
+	slotX[0]    = -FISH_W[0] / 2.0f;
+	slotX[1]    = g.xres + FISH_W[1] / 2.0f;
+	slotBob[0]  = 0.0f;
+	slotBob[1]  = 0.5f;
 }
 
 //Random Gen for mouseClicks
@@ -507,44 +484,35 @@ void physics()
         g.tex.xc[0] += 0.001;
         g.tex.xc[1] += 0.001;
 
-		g.logoAngle += 3.0f;          // pescado spin speed
+		g.logoAngle += 3.0f;
     	if (g.logoAngle >= 360.0f)
         	g.logoAngle -= 360.0f;
 	}
 
 	if (gameState == PLAY || gameState == FISHING) {
-		boatBobTime         += boatBobSpeed;
-		milkFishBobTime     += milkFishBobSpeed;
-		reynbohBobTime      += reynbohBobSpeed;
-		deathSnapperBobTime += deathSnapperBobSpeed;
-		exoTroutBobTime     += exoTroutBobSpeed;
-		griesellyBobTime    += griesellyBobSpeed;
-	}	
-    if (gameState == FISHING) {
-		float halfW = 75.0f;
-		fishX += fishFacingRight ? fishSpeedX : -fishSpeedX;
-		if (fishX + halfW >= g.xres) { fishX = g.xres - halfW; fishFacingRight = false; }
-		if (fishX - halfW <= 0)      { fishX = halfW;           fishFacingRight = true;  }
+		boatBobTime += boatBobSpeed;
+	}
 
-		float reynbohHalfW = 60.0f;
-		reynbohX += reynbohFacingRight ? reynbohSpeedX : -reynbohSpeedX;
-		if (reynbohX + reynbohHalfW >= g.xres) { reynbohX = g.xres - reynbohHalfW; reynbohFacingRight = false; }
-		if (reynbohX - reynbohHalfW <= 0)      { reynbohX = reynbohHalfW;           reynbohFacingRight = true;  }
+	if (gameState == FISHING) {
+		// slot 0 always moves right, slot 1 always moves left
+		for (int s = 0; s < 2; s++) {
+			int   fi    = slotFish[s];
+			float speed = FISH_SPEED[fi];
+			slotBob[s] += FISH_BOB_SPEED[fi];
+			slotX[s]   += (s == 0) ? speed : -speed;
 
-		float snapperHalfW = 65.0f;
-		deathSnapperX += deathSnapperFacingRight ? deathSnapperSpeedX : -deathSnapperSpeedX;
-		if (deathSnapperX + snapperHalfW >= g.xres) { deathSnapperX = g.xres - snapperHalfW; deathSnapperFacingRight = false; }
-		if (deathSnapperX - snapperHalfW <= 0)      { deathSnapperX = snapperHalfW;           deathSnapperFacingRight = true;  }
-
-		float exoTroutHalfW = 60.0f;
-		exoTroutX += exoTroutFacingRight ? exoTroutSpeedX : -exoTroutSpeedX;
-		if (exoTroutX + exoTroutHalfW >= g.xres) { exoTroutX = g.xres - exoTroutHalfW; exoTroutFacingRight = false; }
-		if (exoTroutX - exoTroutHalfW <= 0)      { exoTroutX = exoTroutHalfW;           exoTroutFacingRight = true;  }
-
-		float griesellyHalfW = 65.0f;
-		griesellyX += griesellyFacingRight ? griesellySpeedX : -griesellySpeedX;
-		if (griesellyX + griesellyHalfW >= g.xres) { griesellyX = g.xres - griesellyHalfW; griesellyFacingRight = false; }
-		if (griesellyX - griesellyHalfW <= 0)      { griesellyX = griesellyHalfW;           griesellyFacingRight = true;  }
+			float halfW = FISH_W[fi] / 2.0f;
+			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres)
+			                       : (slotX[s] + halfW < 0);
+			if (exited) {
+				// cycle to next fish, skip the one the other slot is showing
+				int next = (fi + 2) % NUM_FISH; // +2 to skip the other slot's fish
+				slotFish[s] = next;
+				slotBob[s]  = 0.0f;
+				float nextHalfW = FISH_W[next] / 2.0f;
+				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
+			}
+		}
 	}
 }
 
@@ -704,147 +672,28 @@ void render_boat() {
     
 }
 
-void render_fish() {
-   
-    float w = 150.0f;
-    float h = 120.0f;
-    float cx = fishX;
-    float cy = 90.0f; // well below the boat
+void render_fish_slot(int s) {
 
-	float bob = sinf(milkFishBobTime) * milkFishBobAmp;
+	GLuint textures[NUM_FISH] = {
+		g.fishOneTex, g.reynbohTex, g.deathSnapperTex, g.exoTroutTex, g.griesellyTex
+	};
 
-    // flip texture coords horizontally based on direction
-	float texLeft  = fishFacingRight ? 0.0f : 1.0f;
-	float texRight = fishFacingRight ? 1.0f : 0.0f;
+	int   fi       = slotFish[s];
+	float w        = FISH_W[fi];
+	float h        = FISH_H[fi];
+	float cx       = slotX[s];
+	float cy       = FISH_CY[fi];
+	float bob      = sinf(slotBob[s]) * FISH_BOB_AMP[fi];
+	bool  facingRight = (s == 0); // slot 0 goes right, slot 1 goes left
 
-	glEnable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-
-    glColor4f(1.0, 1.0, 1.0, 1.0);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, g.fishOneTex);
-	glPushMatrix();
-	glTranslatef(cx, cy + bob, 0.0f);
-    glBegin(GL_QUADS);
-        glTexCoord2f(texLeft, 1.0f); glVertex2f(-w/2, -h/2);
-        glTexCoord2f(texLeft, 0.0f); glVertex2f(-w/2, h/2);
-        glTexCoord2f(texRight, 0.0f); glVertex2f(w/2, h/2);
-        glTexCoord2f(texRight, 1.0f); glVertex2f(w/2, -h/2);
-    glEnd();
-	glDisable(GL_BLEND);
-	glPopMatrix();
-    
-}
-
-void render_reynboh_fish() {
-
-    float w = 120.0f;
-    float h = 100.0f;
-    float cx = reynbohX;
-    float cy = 60.0f; // different depth than milking fish
-
-	float bob = sinf(reynbohBobTime) * reynbohBobAmp;
-
-	float texLeft  = reynbohFacingRight ? 0.0f : 1.0f;
-	float texRight = reynbohFacingRight ? 1.0f : 0.0f;
-
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND);
-
-	glColor4f(1.0, 1.0, 1.0, 1.0);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBindTexture(GL_TEXTURE_2D, g.reynbohTex);
-	glPushMatrix();
-	glTranslatef(cx, cy + bob, 0.0f);
-	glBegin(GL_QUADS);
-		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
-		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
-		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
-		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
-	glEnd();
-	glDisable(GL_BLEND);
-	glPopMatrix();
-
-}
-
-void render_death_snapper() {
-
-	float w = 130.0f;
-	float h = 110.0f;
-	float cx = deathSnapperX;
-	float cy = 30.0f; // deepest of the three fish
-
-	float bob = sinf(deathSnapperBobTime) * deathSnapperBobAmp;
-
-	float texLeft  = deathSnapperFacingRight ? 0.0f : 1.0f;
-	float texRight = deathSnapperFacingRight ? 1.0f : 0.0f;
-
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND);
-
-	glColor4f(1.0, 1.0, 1.0, 1.0);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBindTexture(GL_TEXTURE_2D, g.deathSnapperTex);
-	glPushMatrix();
-	glTranslatef(cx, cy + bob, 0.0f);
-	glBegin(GL_QUADS);
-		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
-		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
-		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
-		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
-	glEnd();
-	glDisable(GL_BLEND);
-	glPopMatrix();
-
-}
-
-void render_exo_trout() {
-
-	float w = 140.0f;
-	float h = 110.0f;
-	float cx = exoTroutX;
-	float cy = 120.0f; // higher than the other fish
-
-	float bob = sinf(exoTroutBobTime) * exoTroutBobAmp;
-
-	float texLeft  = exoTroutFacingRight ? 0.0f : 1.0f;
-	float texRight = exoTroutFacingRight ? 1.0f : 0.0f;
+	float texLeft  = facingRight ? 0.0f : 1.0f;
+	float texRight = facingRight ? 1.0f : 0.0f;
 
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_BLEND);
 	glColor4f(1.0, 1.0, 1.0, 1.0);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBindTexture(GL_TEXTURE_2D, g.exoTroutTex);
-	glPushMatrix();
-	glTranslatef(cx, cy + bob, 0.0f);
-	glBegin(GL_QUADS);
-		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
-		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
-		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
-		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
-	glEnd();
-	glDisable(GL_BLEND);
-	glPopMatrix();
-
-}
-
-void render_grieselly_fish() {
-
-	float w = 125.0f;
-	float h = 105.0f;
-	float cx = griesellyX;
-	float cy = 150.0f; // highest of all fish, still well below boat
-
-	float bob = sinf(griesellyBobTime) * griesellyBobAmp;
-
-	float texLeft  = griesellyFacingRight ? 0.0f : 1.0f;
-	float texRight = griesellyFacingRight ? 1.0f : 0.0f;
-
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND);
-	glColor4f(1.0, 1.0, 1.0, 1.0);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBindTexture(GL_TEXTURE_2D, g.griesellyTex);
+	glBindTexture(GL_TEXTURE_2D, textures[fi]);
 	glPushMatrix();
 	glTranslatef(cx, cy + bob, 0.0f);
 	glBegin(GL_QUADS);
@@ -931,11 +780,8 @@ void render()
         glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
         glEnd();
         render_boat();
-        render_fish();
-        render_reynboh_fish();
-        render_death_snapper();
-        render_exo_trout();
-        render_grieselly_fish();
+        render_fish_slot(0);
+        render_fish_slot(1);
 	}
 
 }
