@@ -28,9 +28,10 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[7] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
+Image img[8] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/boat.png", 
-    "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png"};
+    "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png", 
+    "./assets/images/death_snapper.png"};
 
 // for boat machanics 
 float boatBobTime = 0.5f;
@@ -51,9 +52,17 @@ bool fishFacingRight = true;
 float reynbohBobTime = 0.0f;
 float reynbohBobAmp = 4.0f;
 float reynbohBobSpeed = 0.35f;
-float reynbohX = 0.0f;       // initialized in init_opengl
+float reynbohX = 0.0f;
 float reynbohSpeedX = 3.5f;
-bool reynbohFacingRight = false; // starts moving left
+bool reynbohFacingRight = false;
+
+// for death snapper bob and movement
+float deathSnapperBobTime = 0.1f;
+float deathSnapperBobAmp = 6.0f;
+float deathSnapperBobSpeed = 0.45f;
+float deathSnapperX = 0.0f;   // initialized in init_opengl
+float deathSnapperSpeedX = 4.5f;
+bool deathSnapperFacingRight = true;
 
 class Texture {
 public:
@@ -108,6 +117,7 @@ public:
 	GLuint boatTex;
 	GLuint fishOneTex;
 	GLuint reynbohTex;
+	GLuint deathSnapperTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -118,6 +128,7 @@ public:
 		boatTex = 0;
 		fishOneTex = 0;
 		reynbohTex = 0;
+		deathSnapperTex = 0;
 	}
 } g;
 
@@ -347,9 +358,21 @@ void init_opengl(void)
 				 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataReynboh);
 	free(alphaDataReynboh);
 
+	//death snapper
+	unsigned char *alphaDataDeathSnapper = buildAlphaData(&img[7]);
+	glGenTextures(1, &g.deathSnapperTex);
+	glBindTexture(GL_TEXTURE_2D, g.deathSnapperTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[7].width, img[7].height, 0,
+				 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataDeathSnapper);
+	free(alphaDataDeathSnapper);
+
 	initialize_fonts();
-    fishX = g.xres * 0.8f;  // starting x position for milk fish
-	reynbohX = g.xres * 0.2f; // starting x position for reynboh
+	fishX         = g.xres * 0.8f;
+	reynbohX      = g.xres * 0.2f;
+	deathSnapperX = g.xres * 0.5f;
 }
 
 //Random Gen for mouseClicks
@@ -445,32 +468,26 @@ void physics()
 	}
 
 	if (gameState == PLAY || gameState == FISHING) {
-		boatBobTime += boatBobSpeed;
-		milkFishBobTime += milkFishBobSpeed;
-		reynbohBobTime += reynbohBobSpeed;
+		boatBobTime         += boatBobSpeed;
+		milkFishBobTime     += milkFishBobSpeed;
+		reynbohBobTime      += reynbohBobSpeed;
+		deathSnapperBobTime += deathSnapperBobSpeed;
 	}	
     if (gameState == FISHING) {
 		float halfW = 75.0f;
 		fishX += fishFacingRight ? fishSpeedX : -fishSpeedX;
-		if (fishX + halfW >= g.xres) {
-			fishX = g.xres - halfW;
-			fishFacingRight = false;
-		}
-		if (fishX - halfW <= 0) {
-			fishX = halfW;
-			fishFacingRight = true;
-		}
+		if (fishX + halfW >= g.xres) { fishX = g.xres - halfW; fishFacingRight = false; }
+		if (fishX - halfW <= 0)      { fishX = halfW;           fishFacingRight = true;  }
 
 		float reynbohHalfW = 60.0f;
 		reynbohX += reynbohFacingRight ? reynbohSpeedX : -reynbohSpeedX;
-		if (reynbohX + reynbohHalfW >= g.xres) {
-			reynbohX = g.xres - reynbohHalfW;
-			reynbohFacingRight = false;
-		}
-		if (reynbohX - reynbohHalfW <= 0) {
-			reynbohX = reynbohHalfW;
-			reynbohFacingRight = true;
-		}
+		if (reynbohX + reynbohHalfW >= g.xres) { reynbohX = g.xres - reynbohHalfW; reynbohFacingRight = false; }
+		if (reynbohX - reynbohHalfW <= 0)      { reynbohX = reynbohHalfW;           reynbohFacingRight = true;  }
+
+		float snapperHalfW = 65.0f;
+		deathSnapperX += deathSnapperFacingRight ? deathSnapperSpeedX : -deathSnapperSpeedX;
+		if (deathSnapperX + snapperHalfW >= g.xres) { deathSnapperX = g.xres - snapperHalfW; deathSnapperFacingRight = false; }
+		if (deathSnapperX - snapperHalfW <= 0)      { deathSnapperX = snapperHalfW;           deathSnapperFacingRight = true;  }
 	}
 }
 
@@ -635,7 +652,7 @@ void render_fish() {
     float w = 150.0f;
     float h = 120.0f;
     float cx = fishX;
-    float cy = (g.yres / 2.0f) - 200.0f;
+    float cy = 90.0f; // well below the boat
 
 	float bob = sinf(milkFishBobTime) * milkFishBobAmp;
 
@@ -667,7 +684,7 @@ void render_reynboh_fish() {
     float w = 120.0f;
     float h = 100.0f;
     float cx = reynbohX;
-    float cy = (g.yres / 2.0f) - 100.0f; // different height than milking fish
+    float cy = 60.0f; // different depth than milking fish
 
 	float bob = sinf(reynbohBobTime) * reynbohBobAmp;
 
@@ -680,6 +697,37 @@ void render_reynboh_fish() {
 	glColor4f(1.0, 1.0, 1.0, 1.0);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glBindTexture(GL_TEXTURE_2D, g.reynbohTex);
+	glPushMatrix();
+	glTranslatef(cx, cy + bob, 0.0f);
+	glBegin(GL_QUADS);
+		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
+		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
+		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
+		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
+	glEnd();
+	glDisable(GL_BLEND);
+	glPopMatrix();
+
+}
+
+void render_death_snapper() {
+
+	float w = 130.0f;
+	float h = 110.0f;
+	float cx = deathSnapperX;
+	float cy = 30.0f; // deepest of the three fish
+
+	float bob = sinf(deathSnapperBobTime) * deathSnapperBobAmp;
+
+	float texLeft  = deathSnapperFacingRight ? 0.0f : 1.0f;
+	float texRight = deathSnapperFacingRight ? 1.0f : 0.0f;
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+
+	glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBindTexture(GL_TEXTURE_2D, g.deathSnapperTex);
 	glPushMatrix();
 	glTranslatef(cx, cy + bob, 0.0f);
 	glBegin(GL_QUADS);
@@ -768,6 +816,7 @@ void render()
         render_boat();
         render_fish();
         render_reynboh_fish();
+        render_death_snapper();
 	}
 
 }
