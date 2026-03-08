@@ -28,10 +28,11 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[8] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
+Image img[10] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/boat.png", 
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png", 
-    "./assets/images/death_snapper.png"};
+    "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
+    "./assets/images/grieselly_fish.png"};
 
 // for boat machanics 
 float boatBobTime = 0.5f;
@@ -60,9 +61,25 @@ bool reynbohFacingRight = false;
 float deathSnapperBobTime = 0.1f;
 float deathSnapperBobAmp = 6.0f;
 float deathSnapperBobSpeed = 0.45f;
-float deathSnapperX = 0.0f;   // initialized in init_opengl
+float deathSnapperX = 0.0f;
 float deathSnapperSpeedX = 4.5f;
 bool deathSnapperFacingRight = true;
+
+// for exo trout bob and movement
+float exoTroutBobTime = 0.3f;
+float exoTroutBobAmp = 3.5f;
+float exoTroutBobSpeed = 0.28f;
+float exoTroutX = 0.0f;
+float exoTroutSpeedX = 3.0f;
+bool exoTroutFacingRight = true;
+
+// for grieselly fish bob and movement
+float griesellyBobTime = 0.6f;
+float griesellyBobAmp = 5.5f;
+float griesellyBobSpeed = 0.40f;
+float griesellyX = 0.0f;
+float griesellySpeedX = 5.0f;
+bool griesellyFacingRight = false;
 
 class Texture {
 public:
@@ -118,6 +135,8 @@ public:
 	GLuint fishOneTex;
 	GLuint reynbohTex;
 	GLuint deathSnapperTex;
+	GLuint exoTroutTex;
+	GLuint griesellyTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -129,6 +148,8 @@ public:
 		fishOneTex = 0;
 		reynbohTex = 0;
 		deathSnapperTex = 0;
+		exoTroutTex = 0;
+		griesellyTex = 0;
 	}
 } g;
 
@@ -369,10 +390,34 @@ void init_opengl(void)
 				 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataDeathSnapper);
 	free(alphaDataDeathSnapper);
 
+	//exo trout
+	unsigned char *alphaDataExoTrout = buildAlphaData(&img[8]);
+	glGenTextures(1, &g.exoTroutTex);
+	glBindTexture(GL_TEXTURE_2D, g.exoTroutTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[8].width, img[8].height, 0,
+				 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataExoTrout);
+	free(alphaDataExoTrout);
+
+	//grieselly fish
+	unsigned char *alphaDataGrieselly = buildAlphaData(&img[9]);
+	glGenTextures(1, &g.griesellyTex);
+	glBindTexture(GL_TEXTURE_2D, g.griesellyTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[9].width, img[9].height, 0,
+				 GL_RGBA, GL_UNSIGNED_BYTE, alphaDataGrieselly);
+	free(alphaDataGrieselly);
+
 	initialize_fonts();
 	fishX         = g.xres * 0.8f;
 	reynbohX      = g.xres * 0.2f;
 	deathSnapperX = g.xres * 0.5f;
+	exoTroutX     = g.xres * 0.65f;
+	griesellyX    = g.xres * 0.35f;
 }
 
 //Random Gen for mouseClicks
@@ -472,6 +517,8 @@ void physics()
 		milkFishBobTime     += milkFishBobSpeed;
 		reynbohBobTime      += reynbohBobSpeed;
 		deathSnapperBobTime += deathSnapperBobSpeed;
+		exoTroutBobTime     += exoTroutBobSpeed;
+		griesellyBobTime    += griesellyBobSpeed;
 	}	
     if (gameState == FISHING) {
 		float halfW = 75.0f;
@@ -488,6 +535,16 @@ void physics()
 		deathSnapperX += deathSnapperFacingRight ? deathSnapperSpeedX : -deathSnapperSpeedX;
 		if (deathSnapperX + snapperHalfW >= g.xres) { deathSnapperX = g.xres - snapperHalfW; deathSnapperFacingRight = false; }
 		if (deathSnapperX - snapperHalfW <= 0)      { deathSnapperX = snapperHalfW;           deathSnapperFacingRight = true;  }
+
+		float exoTroutHalfW = 60.0f;
+		exoTroutX += exoTroutFacingRight ? exoTroutSpeedX : -exoTroutSpeedX;
+		if (exoTroutX + exoTroutHalfW >= g.xres) { exoTroutX = g.xres - exoTroutHalfW; exoTroutFacingRight = false; }
+		if (exoTroutX - exoTroutHalfW <= 0)      { exoTroutX = exoTroutHalfW;           exoTroutFacingRight = true;  }
+
+		float griesellyHalfW = 65.0f;
+		griesellyX += griesellyFacingRight ? griesellySpeedX : -griesellySpeedX;
+		if (griesellyX + griesellyHalfW >= g.xres) { griesellyX = g.xres - griesellyHalfW; griesellyFacingRight = false; }
+		if (griesellyX - griesellyHalfW <= 0)      { griesellyX = griesellyHalfW;           griesellyFacingRight = true;  }
 	}
 }
 
@@ -741,6 +798,66 @@ void render_death_snapper() {
 
 }
 
+void render_exo_trout() {
+
+	float w = 140.0f;
+	float h = 110.0f;
+	float cx = exoTroutX;
+	float cy = 120.0f; // higher than the other fish
+
+	float bob = sinf(exoTroutBobTime) * exoTroutBobAmp;
+
+	float texLeft  = exoTroutFacingRight ? 0.0f : 1.0f;
+	float texRight = exoTroutFacingRight ? 1.0f : 0.0f;
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBindTexture(GL_TEXTURE_2D, g.exoTroutTex);
+	glPushMatrix();
+	glTranslatef(cx, cy + bob, 0.0f);
+	glBegin(GL_QUADS);
+		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
+		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
+		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
+		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
+	glEnd();
+	glDisable(GL_BLEND);
+	glPopMatrix();
+
+}
+
+void render_grieselly_fish() {
+
+	float w = 125.0f;
+	float h = 105.0f;
+	float cx = griesellyX;
+	float cy = 150.0f; // highest of all fish, still well below boat
+
+	float bob = sinf(griesellyBobTime) * griesellyBobAmp;
+
+	float texLeft  = griesellyFacingRight ? 0.0f : 1.0f;
+	float texRight = griesellyFacingRight ? 1.0f : 0.0f;
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBindTexture(GL_TEXTURE_2D, g.griesellyTex);
+	glPushMatrix();
+	glTranslatef(cx, cy + bob, 0.0f);
+	glBegin(GL_QUADS);
+		glTexCoord2f(texLeft,  1.0f); glVertex2f(-w/2, -h/2);
+		glTexCoord2f(texLeft,  0.0f); glVertex2f(-w/2,  h/2);
+		glTexCoord2f(texRight, 0.0f); glVertex2f( w/2,  h/2);
+		glTexCoord2f(texRight, 1.0f); glVertex2f( w/2, -h/2);
+	glEnd();
+	glDisable(GL_BLEND);
+	glPopMatrix();
+
+}
+
 void render_menu()
 {
     const int paddingX = 25;
@@ -817,6 +934,8 @@ void render()
         render_fish();
         render_reynboh_fish();
         render_death_snapper();
+        render_exo_trout();
+        render_grieselly_fish();
 	}
 
 }
