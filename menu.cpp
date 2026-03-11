@@ -914,8 +914,9 @@ void render_menu()
 
 void render_skill_check()
 {
-	float cx = g.xres / 2.0f;
-	float cy = g.yres / 2.0f;
+	// Offset to the right of the boat (boat is centered at xres/2)
+	float cx = g.xres * 0.78f;
+	float cy = g.yres * 0.55f;
 	float r  = 80.0f;
 	const int SEG = 120;
 
