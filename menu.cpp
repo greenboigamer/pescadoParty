@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <sys/time.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <GL/glx.h>
@@ -55,6 +56,116 @@ int   slotFish[2]  = { 0, 1 };   // which fish type each slot is showing
 float slotX[2]     = { 0.0f, 0.0f };
 float slotBob[2]   = { 0.0f, 0.5f };
 // slot 0 always goes right, slot 1 always goes left
+
+// ── Skill check state ────────────────────────────────────────
+bool  skillCheckActive  = false;
+float needleAngle       = 0.0f;
+float needleSpeed       = 1.8f;
+float scZoneStart       = 0.5f;
+const float SC_ZONE_SIZE    = 0.30f;
+const float SC_PERFECT_SIZE = 0.08f;
+
+// Result display
+enum SkillResult { SC_NONE, SC_MISS, SC_HIT, SC_GREAT };
+SkillResult skillResult = SC_NONE;
+float       resultTimer = 0.0f;
+
+// ── Catch / reeling system ───────────────────────────────────
+// A "catch" requires CHECKS_NEEDED successful hits in a row.
+// Missing resets progress. Greats count double toward reelProgress.
+const int   CHECKS_NEEDED  = 3;     // hits needed to land a fish
+const float REEL_HIT_AMT   = 1.0f; // progress per good hit
+const float REEL_GREAT_AMT = 2.0f; // progress per great hit
+const float REEL_MISS_AMT  = 1.5f; // progress lost on miss
+
+float reelProgress   = 0.0f;  // 0 → CHECKS_NEEDED = fish caught
+float reelMax        = (float)CHECKS_NEEDED * REEL_HIT_AMT;
+int   totalCaught    = 0;     // fish landed this session
+int   streak         = 0;     // consecutive non-miss checks
+float catchMsgTimer  = 0.0f;  // how long "FISH CAUGHT!" stays up
+
+void start_skill_check();
+void on_skill_result(SkillResult r);
+
+void on_skill_result(SkillResult r) {
+    if (r == SC_GREAT) {
+        reelProgress += REEL_GREAT_AMT;
+        streak++;
+        printf("[SKILL] GREAT HIT  | reel: %.1f / %.1f | streak: %d\n",
+               reelProgress, reelMax, streak);
+        fflush(stdout);
+        if (reelProgress < reelMax) {
+            printf("[SKILL] Respawning zone at new position, resetting needle\n");
+            fflush(stdout);
+            start_skill_check();
+        }
+    } else if (r == SC_HIT) {
+        reelProgress += REEL_HIT_AMT;
+        streak++;
+        printf("[SKILL] GOOD HIT   | reel: %.1f / %.1f | streak: %d\n",
+               reelProgress, reelMax, streak);
+        fflush(stdout);
+        if (reelProgress < reelMax) {
+            printf("[SKILL] Respawning zone at new position, resetting needle\n");
+            fflush(stdout);
+            start_skill_check();
+        }
+    } else {
+        reelProgress -= REEL_MISS_AMT;
+        if (reelProgress < 0.0f) reelProgress = 0.0f;
+        streak = 0;
+        printf("[SKILL] MISSED     | reel: %.1f / %.1f | streak reset\n",
+               reelProgress, reelMax);
+        printf("[SKILL] Needle will reset after result flash\n");
+        fflush(stdout);
+    }
+
+    if (reelProgress >= reelMax) {
+        totalCaught++;
+        reelProgress     = 0.0f;
+        streak           = 0;
+        catchMsgTimer    = 2.0f;
+        skillCheckActive = false;
+        printf("[CATCH] *** FISH CAUGHT! Total fish: %d ***\n", totalCaught);
+        fflush(stdout);
+    }
+}
+
+void start_skill_check() {
+    uniform_real_distribution<float> zoneDist(
+        0.4f, 2.0f * M_PI - SC_ZONE_SIZE - 0.4f);
+    // Speed scales with reel progress — gets harder as you reel in
+    float minSpeed = 1.4f + (reelProgress / reelMax) * 0.8f;
+    float maxSpeed = 2.4f + (reelProgress / reelMax) * 1.0f;
+    uniform_real_distribution<float> speedDist(minSpeed, maxSpeed);
+
+    float oldZone  = scZoneStart;
+    float oldSpeed = needleSpeed;
+
+    scZoneStart      = zoneDist(gen);
+    needleSpeed      = speedDist(gen);
+    needleAngle      = 0.0f;   // reset to 12 o'clock
+    skillCheckActive = true;
+    skillResult      = SC_NONE;
+
+    printf("[SKILL] New check  | zone: %.2f rad (was %.2f) | speed: %.2f (was %.2f) | needle reset to 0\n",
+           scZoneStart, oldZone, needleSpeed, oldSpeed);
+    fflush(stdout);
+}
+
+
+float normalizeAngle(float a) {
+    float twoPi = 2.0f * M_PI;
+    return fmodf(fmodf(a, twoPi) + twoPi, twoPi);
+}
+
+bool isInArc(float needle, float start, float size) {
+    float n = normalizeAngle(needle);
+    float s = normalizeAngle(start);
+    float e = normalizeAngle(start + size);
+    if (s <= e) return n >= s && n <= e;
+    return n >= s || n <= e;
+}
 
 class Texture {
 public:
@@ -433,6 +544,7 @@ void check_mouse(XEvent *e)
                 if (mouseClicks == 1) {
 			        printf("Fishing Game Started\n");
                     gameState = FISHING;
+                    start_skill_check();
                 }
                 if (mouseClicks == 10) {
                     printf("threshold met! \n");
@@ -458,22 +570,51 @@ void check_mouse(XEvent *e)
 
 int check_keys(XEvent *e)
 {
-	//Was there input from the keyboard?
 	if (e->type == KeyPress) {
 		int key = XLookupKeysym(&e->xkey, 0);
+		// ESC: back to PLAY from FISHING, otherwise quit
 		if (key == XK_Escape) {
+			if (gameState == FISHING) {
+				gameState = PLAY;
+				skillCheckActive = false;
+				return 0;
+			}
 			return 1;
 		}
-		if (key == XK_Up || key == XK_w){
-			menuSelected = (menuSelected - 1 + menuCount) % menuCount;
+		// TEST KEY: press F anywhere to jump to FISHING with a fresh skill check
+		if (key == XK_f || key == XK_F) {
+			gameState = FISHING;
+			start_skill_check();
+			printf("[TEST] Entered FISHING state, skill check started\n");
+			fflush(stdout);
 		}
-		if (key == XK_Down || key == XK_s){
-			menuSelected = (menuSelected + 1 + menuCount) % menuCount;
+		// SPACE: skill check input in FISHING, menu select otherwise
+		if (key == XK_space) {
+			if (gameState == FISHING && skillCheckActive) {
+				skillCheckActive = false;
+				if (isInArc(needleAngle, scZoneStart, SC_PERFECT_SIZE)) {
+					skillResult = SC_GREAT;
+					resultTimer = 0.8f;
+				} else if (isInArc(needleAngle, scZoneStart, SC_ZONE_SIZE)) {
+					skillResult = SC_HIT;
+					resultTimer = 0.8f;
+				} else {
+					skillResult = SC_MISS;
+					resultTimer = 0.8f;
+				}
+				on_skill_result(skillResult);
+			} else if (gameState == MENU) {
+				select_menu_option(menuSelected);
+			}
 		}
-		if (key == XK_Return || key == XK_space){
-			select_menu_option(menuSelected);
+		if (gameState == MENU) {
+			if (key == XK_Up || key == XK_w)
+				menuSelected = (menuSelected - 1 + menuCount) % menuCount;
+			if (key == XK_Down || key == XK_s)
+				menuSelected = (menuSelected + 1 + menuCount) % menuCount;
+			if (key == XK_Return)
+				select_menu_option(menuSelected);
 		}
-
 	}
 	return 0;
 }
@@ -494,6 +635,43 @@ void physics()
 	}
 
 	if (gameState == FISHING) {
+		// Real delta time for smooth needle movement
+		static struct timeval lastTime = {0, 0};
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		float dt = 0.0f;
+		if (lastTime.tv_sec != 0) {
+			dt = (now.tv_sec  - lastTime.tv_sec) +
+			     (now.tv_usec - lastTime.tv_usec) / 1000000.0f;
+			if (dt > 0.1f) dt = 0.1f;
+		}
+		lastTime = now;
+
+		// Advance needle
+		if (skillCheckActive) {
+			needleAngle += needleSpeed * dt;
+			if (needleAngle > 2.0f * M_PI) needleAngle -= 2.0f * M_PI;
+		}
+		// Tick down result flash, then fire next skill check
+		// (skip restart if fish was just caught — catchMsgTimer handles that)
+		if (!skillCheckActive && resultTimer > 0.0f) {
+			resultTimer -= dt;
+			if (resultTimer <= 0.0f) {
+				resultTimer = 0.0f;
+				skillResult = SC_NONE;
+				if (catchMsgTimer <= 0.0f)
+					start_skill_check();
+			}
+		}
+		// Tick down "FISH CAUGHT!" message, then start fresh reel
+		if (catchMsgTimer > 0.0f) {
+			catchMsgTimer -= dt;
+			if (catchMsgTimer <= 0.0f) {
+				catchMsgTimer = 0.0f;
+				reelProgress  = 0.0f;
+				start_skill_check();
+			}
+		}
 		// slot 0 always moves right, slot 1 always moves left
 		for (int s = 0; s < 2; s++) {
 			int   fi    = slotFish[s];
@@ -734,6 +912,172 @@ void render_menu()
 
 }
 
+void render_skill_check()
+{
+	float cx = g.xres / 2.0f;
+	float cy = g.yres / 2.0f;
+	float r  = 80.0f;
+	const int SEG = 120;
+
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Dark backing ring
+	glLineWidth(14.0f);
+	glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
+	glBegin(GL_LINE_LOOP);
+	for (int i = 0; i < SEG; i++) {
+		float a = (float)i / SEG * 2.0f * M_PI;
+		glVertex2f(cx + cosf(a) * r, cy + sinf(a) * r);
+	}
+	glEnd();
+
+	// Base ring (dark teal)
+	glLineWidth(6.0f);
+	glColor4f(0.1f, 0.22f, 0.35f, 1.0f);
+	glBegin(GL_LINE_LOOP);
+	for (int i = 0; i < SEG; i++) {
+		float a = (float)i / SEG * 2.0f * M_PI;
+		glVertex2f(cx + cosf(a) * r, cy + sinf(a) * r);
+	}
+	glEnd();
+
+	// Green success zone
+	glLineWidth(8.0f);
+	glColor4f(0.18f, 0.8f, 0.44f, 1.0f);
+	int zSegs = max(2, (int)(SEG * SC_ZONE_SIZE / (2.0f * M_PI)));
+	glBegin(GL_LINE_STRIP);
+	for (int i = 0; i <= zSegs; i++) {
+		float a = scZoneStart + (float)i / zSegs * SC_ZONE_SIZE;
+		glVertex2f(cx + cosf(a) * r, cy + sinf(a) * r);
+	}
+	glEnd();
+
+	// Yellow perfect zone
+	glLineWidth(8.0f);
+	glColor4f(1.0f, 0.85f, 0.2f, 1.0f);
+	int pSegs = max(2, (int)(SEG * SC_PERFECT_SIZE / (2.0f * M_PI)));
+	glBegin(GL_LINE_STRIP);
+	for (int i = 0; i <= pSegs; i++) {
+		float a = scZoneStart + (float)i / pSegs * SC_PERFECT_SIZE;
+		glVertex2f(cx + cosf(a) * r, cy + sinf(a) * r);
+	}
+	glEnd();
+
+	// Needle
+	glLineWidth(2.5f);
+	glColor4f(1.0f, 0.26f, 0.26f, 1.0f);
+	glBegin(GL_LINES);
+		glVertex2f(cx, cy);
+		glVertex2f(cx + cosf(needleAngle) * r, cy + sinf(needleAngle) * r);
+	glEnd();
+
+	// Needle tip
+	glPointSize(9.0f);
+	glColor4f(1.0f, 0.45f, 0.45f, 1.0f);
+	glBegin(GL_POINTS);
+		glVertex2f(cx + cosf(needleAngle) * r, cy + sinf(needleAngle) * r);
+	glEnd();
+
+	// Center pivot
+	glPointSize(7.0f);
+	glColor4f(0.9f, 0.95f, 1.0f, 1.0f);
+	glBegin(GL_POINTS);
+		glVertex2f(cx, cy);
+	glEnd();
+
+	glDisable(GL_BLEND);
+
+	// ── Reel progress bar ────────────────────────────────────
+	// Drawn just below the circle
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	float barW   = 160.0f;
+	float barH   = 12.0f;
+	float barX   = cx - barW / 2.0f;
+	float barY   = cy - r - 30.0f;
+	float filled = (reelProgress / reelMax) * barW;
+	if (filled > barW) filled = barW;
+
+	// Background
+	glColor4f(0.1f, 0.1f, 0.15f, 0.8f);
+	glBegin(GL_QUADS);
+		glVertex2f(barX,        barY);
+		glVertex2f(barX,        barY + barH);
+		glVertex2f(barX + barW, barY + barH);
+		glVertex2f(barX + barW, barY);
+	glEnd();
+
+	// Fill — green normally, yellow when almost full
+	float fillRatio = reelProgress / reelMax;
+	if (fillRatio > 0.66f)
+		glColor4f(0.18f, 0.8f, 0.44f, 1.0f);
+	else
+		glColor4f(0.2f, 0.55f, 0.9f, 1.0f);
+	glBegin(GL_QUADS);
+		glVertex2f(barX,          barY);
+		glVertex2f(barX,          barY + barH);
+		glVertex2f(barX + filled, barY + barH);
+		glVertex2f(barX + filled, barY);
+	glEnd();
+
+	// Border
+	glColor4f(0.7f, 0.85f, 1.0f, 0.6f);
+	glLineWidth(1.5f);
+	glBegin(GL_LINE_LOOP);
+		glVertex2f(barX,        barY);
+		glVertex2f(barX,        barY + barH);
+		glVertex2f(barX + barW, barY + barH);
+		glVertex2f(barX + barW, barY);
+	glEnd();
+
+	glDisable(GL_BLEND);
+	glEnable(GL_TEXTURE_2D);
+
+	// ── HUD text ─────────────────────────────────────────────
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	Rect rHud;
+	rHud.center = 1;
+	rHud.left   = (int)cx;
+
+	// Streak counter (above circle)
+	if (streak > 1) {
+		rHud.bot = (int)(cy + r + 30);
+		ggprint16(&rHud, 0, 0x00ffe94f, "STREAK x%d", streak);
+	}
+
+	// Fish caught counter (top-left corner)
+	Rect rCorner;
+	rCorner.center = 0;
+	rCorner.left   = 10;
+	rCorner.bot    = g.yres - 20;
+	ggprint16(&rCorner, 0, 0x00c8e6ff, "FISH CAUGHT: %d", totalCaught);
+
+	// Skill check result flash
+	if (skillResult != SC_NONE && resultTimer > 0.0f) {
+		rHud.bot = (int)(cy + r + 55);
+		unsigned int col;
+		const char *msg;
+		if      (skillResult == SC_GREAT) { col = 0x00ffe94f; msg = "GREAT!"; }
+		else if (skillResult == SC_HIT)   { col = 0x004fffb0; msg = "NICE!"; }
+		else                              { col = 0x00ff4f4f; msg = "MISSED!"; }
+		ggprint16(&rHud, 0, col, msg);
+	}
+
+	// "FISH CAUGHT!" banner
+	if (catchMsgTimer > 0.0f) {
+		rHud.bot = (int)(cy + 20);
+		ggprint16(&rHud, 0, 0x00ffe94f, "FISH CAUGHT!");
+	}
+
+	glDisable(GL_BLEND);
+}
+
 void render()
 {
 	if (gameState == MENU) {
@@ -782,6 +1126,7 @@ void render()
         render_boat();
         render_fish_slot(0);
         render_fish_slot(1);
+        render_skill_check();
 	}
 
 }
