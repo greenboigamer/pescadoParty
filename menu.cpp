@@ -30,7 +30,7 @@ enum GameState {
 GameState gameState = MENU;
 
 Image img[10] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
-    "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/boat.png", 
+    "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png", 
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png", 
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
     "./assets/images/grieselly_fish.png"};
@@ -824,8 +824,8 @@ void render_logo()
 
 void render_boat() {
    
-    float w = 300.0f;
-    float h = 400.0f;
+    float w = 200.0f;
+	float h = 100.0f;
     float cx = g.xres / 2.0f;
     float cy = (g.yres / 2.0f) - 80.0f;
 
