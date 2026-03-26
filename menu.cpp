@@ -57,6 +57,21 @@ float slotX[2]     = { 0.0f, 0.0f };
 float slotBob[2]   = { 0.0f, 0.5f };
 // slot 0 always goes right, slot 1 always goes left
 
+// ── Fishing rod / bobber state ───────────────────────────────
+// Phase 1: rod is cast, waiting for a fish to bite
+// Phase 2: fish bites, minigame becomes active
+// Phase 3: minigame meter filled — fish is hooked (not yet caught)
+enum FishingPhase { PHASE_NONE, PHASE_WAITING, PHASE_MINIGAME, PHASE_HOOKED };
+FishingPhase fishingPhase = PHASE_NONE;
+
+float biteTimer    = 0.0f;  // countdown until a fish bites
+float biteDelay    = 0.0f;  // randomised each cast (2–6 seconds)
+bool  bobberActive = false;
+int   hookedFishIndex = -1; // which fish type bit the bobber (-1 = none)
+float biteAlertTimer  = 0.0f; // how long the "fish on the line!" flash shows
+
+void reset_fishing_state(); // defined after all globals
+
 // ── Skill check state ────────────────────────────────────────
 bool  skillCheckActive  = false;
 float needleAngle       = 0.0f;
@@ -121,12 +136,14 @@ void on_skill_result(SkillResult r) {
     }
 
     if (reelProgress >= reelMax) {
-        totalCaught++;
+        // Meter filled: fish is now hooked — but not yet caught.
+        // Transition to PHASE_HOOKED; catching happens in a later step.
         reelProgress     = 0.0f;
         streak           = 0;
-        catchMsgTimer    = 2.0f;
         skillCheckActive = false;
-        printf("[CATCH] *** FISH CAUGHT! Total fish: %d ***\n", totalCaught);
+        fishingPhase     = PHASE_HOOKED;
+        catchMsgTimer    = 2.0f;   // reuse timer to display the hooked banner
+        printf("[REEL] *** FISH HOOKED! (not yet caught) ***\n");
         fflush(stdout);
     }
 }
@@ -153,6 +170,20 @@ void start_skill_check() {
     fflush(stdout);
 }
 
+
+void reset_fishing_state() {
+    fishingPhase     = PHASE_NONE;
+    biteTimer        = 0.0f;
+    bobberActive     = false;
+    hookedFishIndex  = -1;
+    biteAlertTimer   = 0.0f;
+    skillCheckActive = false;
+    reelProgress     = 0.0f;
+    streak           = 0;
+    catchMsgTimer    = 0.0f;
+    resultTimer      = 0.0f;
+    skillResult      = SC_NONE;
+}
 
 float normalizeAngle(float a) {
     float twoPi = 2.0f * M_PI;
@@ -529,7 +560,6 @@ void check_mouse(XEvent *e)
 	//Was a mouse button clicked?
 	static int savex = 0;
 	static int savey = 0;
-    static int mouseClicks = 0;
 	//
 	if (e->type == ButtonRelease) {
 		return;
@@ -540,21 +570,19 @@ void check_mouse(XEvent *e)
             printf("click \n");
             fflush(stdout);
             if (gameState == PLAY) {
-                mouseClicks++;
-                if (mouseClicks == 1) {
-			        printf("Fishing Game Started\n");
-                    gameState = FISHING;
-                    start_skill_check();
-                }
-                if (mouseClicks == 10) {
-                    printf("threshold met! \n");
-                    fflush(stdout);
-                    mouseClicks = 0;
-                    int amount = threshold();
-                    printf("%i\n", amount);
-                    fflush(stdout);
-                    //amount = 0;
-                }
+                // Cast the rod: enter FISHING in waiting-for-bite phase
+                printf("Rod cast! Waiting for a bite...\n");
+                fflush(stdout);
+                reset_fishing_state();
+                gameState    = FISHING;
+                fishingPhase = PHASE_WAITING;
+                bobberActive = true;
+                // Randomise bite delay: 2–6 seconds
+                uniform_real_distribution<float> biteDist(2.0f, 6.0f);
+                biteDelay = biteDist(gen);
+                biteTimer = biteDelay;
+                printf("[FISHING] Bite expected in %.1f seconds\n", biteDelay);
+                fflush(stdout);
             }
 		}
 		if (e->xbutton.button==3) {
@@ -581,11 +609,16 @@ int check_keys(XEvent *e)
 			}
 			return 1;
 		}
-		// TEST KEY: press F anywhere to jump to FISHING with a fresh skill check
+		// TEST KEY: press F anywhere to jump to FISHING in the waiting phase
 		if (key == XK_f || key == XK_F) {
-			gameState = FISHING;
-			start_skill_check();
-			printf("[TEST] Entered FISHING state, skill check started\n");
+			reset_fishing_state();
+			gameState    = FISHING;
+			fishingPhase = PHASE_WAITING;
+			bobberActive = true;
+			uniform_real_distribution<float> biteDist(2.0f, 6.0f);
+			biteDelay = biteDist(gen);
+			biteTimer = biteDelay;
+			printf("[TEST] Entered FISHING state, waiting %.1f s for bite\n", biteDelay);
 			fflush(stdout);
 		}
 		// SPACE: skill check input in FISHING, menu select otherwise
@@ -647,32 +680,60 @@ void physics()
 		}
 		lastTime = now;
 
-		// Advance needle
-		if (skillCheckActive) {
-			needleAngle += needleSpeed * dt;
-			if (needleAngle > 2.0f * M_PI) needleAngle -= 2.0f * M_PI;
-		}
-		// Tick down result flash, then fire next skill check
-		// (skip restart if fish was just caught — catchMsgTimer handles that)
-		if (!skillCheckActive && resultTimer > 0.0f) {
-			resultTimer -= dt;
-			if (resultTimer <= 0.0f) {
-				resultTimer = 0.0f;
-				skillResult = SC_NONE;
-				if (catchMsgTimer <= 0.0f)
-					start_skill_check();
-			}
-		}
-		// Tick down "FISH CAUGHT!" message, then start fresh reel
-		if (catchMsgTimer > 0.0f) {
-			catchMsgTimer -= dt;
-			if (catchMsgTimer <= 0.0f) {
-				catchMsgTimer = 0.0f;
-				reelProgress  = 0.0f;
+		// ── Phase 1: waiting for a bite ──────────────────────────
+		if (fishingPhase == PHASE_WAITING) {
+			biteTimer -= dt;
+			if (biteTimer <= 0.0f) {
+				// Pick which fish has attached to the bobber
+				uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
+				hookedFishIndex = fishDist(gen);
+				biteAlertTimer  = 1.5f; // show "! FISH ON THE LINE !" for 1.5s
+				fishingPhase = PHASE_MINIGAME;
+				printf("[FISHING] Fish on the bobber! Fish type: %d. Minigame starting!\n", hookedFishIndex);
+				fflush(stdout);
 				start_skill_check();
 			}
 		}
-		// slot 0 always moves right, slot 1 always moves left
+
+		// ── Phase 2: minigame active ─────────────────────────────
+		if (fishingPhase == PHASE_MINIGAME) {
+			// Tick down the bite alert flash
+			if (biteAlertTimer > 0.0f) biteAlertTimer -= dt;
+
+			// Advance needle
+			if (skillCheckActive) {
+				needleAngle += needleSpeed * dt;
+				if (needleAngle > 2.0f * M_PI) needleAngle -= 2.0f * M_PI;
+			}
+			// Tick down result flash, then fire next skill check
+			if (!skillCheckActive && resultTimer > 0.0f) {
+				resultTimer -= dt;
+				if (resultTimer <= 0.0f) {
+					resultTimer = 0.0f;
+					skillResult = SC_NONE;
+					// Only restart if we're still in the minigame phase
+					if (fishingPhase == PHASE_MINIGAME)
+						start_skill_check();
+				}
+			}
+		}
+
+		// ── Phase 3: fish hooked — banner countdown ──────────────
+		if (fishingPhase == PHASE_HOOKED) {
+			if (catchMsgTimer > 0.0f) {
+				catchMsgTimer -= dt;
+				if (catchMsgTimer <= 0.0f) {
+					catchMsgTimer = 0.0f;
+					totalCaught++;
+					printf("[FISHING] Fish caught! Total: %d. Returning to PLAY.\n", totalCaught);
+					fflush(stdout);
+					reset_fishing_state();
+					gameState = PLAY;
+				}
+			}
+		}
+
+		// ── Fish swimming animation (always runs in FISHING) ─────
 		for (int s = 0; s < 2; s++) {
 			int   fi    = slotFish[s];
 			float speed = FISH_SPEED[fi];
@@ -683,8 +744,7 @@ void physics()
 			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres)
 			                       : (slotX[s] + halfW < 0);
 			if (exited) {
-				// cycle to next fish, skip the one the other slot is showing
-				int next = (fi + 2) % NUM_FISH; // +2 to skip the other slot's fish
+				int next = (fi + 2) % NUM_FISH;
 				slotFish[s] = next;
 				slotBob[s]  = 0.0f;
 				float nextHalfW = FISH_W[next] / 2.0f;
@@ -912,6 +972,135 @@ void render_menu()
 
 }
 
+// Fish display names matching the pool order
+const char* FISH_NAMES[NUM_FISH] = {
+    "Milking Fish", "Reynboh Pescado", "Death Snapper", "Exo Trout", "Grieselly Fish"
+};
+
+// ── "! FISH ON THE LINE !" alert flash ───────────────────────
+void render_bite_alert()
+{
+    if (biteAlertTimer <= 0.0f) return;
+
+    // Pulse the alpha so it blinks urgently
+    float alpha = 0.7f + 0.3f * sinf(biteAlertTimer * 20.0f);
+
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Dark backing strip across the screen center
+    float stripH = 40.0f;
+    float stripY = g.yres * 0.5f;
+    glColor4f(0.0f, 0.0f, 0.0f, alpha * 0.6f);
+    glBegin(GL_QUADS);
+        glVertex2f(0,        stripY - stripH * 0.5f);
+        glVertex2f(0,        stripY + stripH * 0.5f);
+        glVertex2f(g.xres,   stripY + stripH * 0.5f);
+        glVertex2f(g.xres,   stripY - stripH * 0.5f);
+    glEnd();
+
+    glEnable(GL_TEXTURE_2D);
+
+    Rect r;
+    r.center = 1;
+    r.left   = g.xres / 2;
+    r.bot    = (int)(stripY - 10);
+    // bright yellow-orange, alpha blinks
+    unsigned int col = 0x00ffcc00;
+    ggprint16(&r, 0, col, "!  FISH ON THE LINE  !");
+
+    glDisable(GL_BLEND);
+}
+
+// ── Fish caught portrait screen ──────────────────────────────
+void render_catch_screen()
+{
+    if (fishingPhase != PHASE_HOOKED || catchMsgTimer <= 0.0f) return;
+    if (hookedFishIndex < 0 || hookedFishIndex >= NUM_FISH) return;
+
+    GLuint fishTextures[NUM_FISH] = {
+        g.fishOneTex, g.reynbohTex, g.deathSnapperTex, g.exoTroutTex, g.griesellyTex
+    };
+
+    // Semi-transparent dark overlay over the whole screen
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.0f, 0.05f, 0.1f, 0.72f);
+    glBegin(GL_QUADS);
+        glVertex2f(0,       0);
+        glVertex2f(0,       g.yres);
+        glVertex2f(g.xres,  g.yres);
+        glVertex2f(g.xres,  0);
+    glEnd();
+
+    // Panel background
+    float panW = 320.0f, panH = 280.0f;
+    float panX = (g.xres - panW) * 0.5f;
+    float panY = (g.yres - panH) * 0.5f;
+    glColor4f(0.05f, 0.15f, 0.25f, 0.92f);
+    glBegin(GL_QUADS);
+        glVertex2f(panX,        panY);
+        glVertex2f(panX,        panY + panH);
+        glVertex2f(panX + panW, panY + panH);
+        glVertex2f(panX + panW, panY);
+    glEnd();
+
+    // Panel border (gold)
+    glLineWidth(2.5f);
+    glColor4f(1.0f, 0.85f, 0.2f, 1.0f);
+    glBegin(GL_LINE_LOOP);
+        glVertex2f(panX,        panY);
+        glVertex2f(panX,        panY + panH);
+        glVertex2f(panX + panW, panY + panH);
+        glVertex2f(panX + panW, panY);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // Fish portrait — centred in top portion of the panel
+    float imgW = FISH_W[hookedFishIndex] * 1.3f;
+    float imgH = FISH_H[hookedFishIndex] * 1.3f;
+    float imgCX = g.xres * 0.5f;
+    float imgCY = panY + panH * 0.58f;
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glBindTexture(GL_TEXTURE_2D, fishTextures[hookedFishIndex]);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(imgCX - imgW * 0.5f, imgCY - imgH * 0.5f);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(imgCX - imgW * 0.5f, imgCY + imgH * 0.5f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(imgCX + imgW * 0.5f, imgCY + imgH * 0.5f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(imgCX + imgW * 0.5f, imgCY - imgH * 0.5f);
+    glEnd();
+    glDisable(GL_BLEND);
+
+    // Text
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    Rect r;
+    r.center = 1;
+    r.left   = g.xres / 2;
+
+    // "FISH CAUGHT!" header
+    r.bot = (int)(panY + panH - 22);
+    ggprint16(&r, 0, 0x00ffe94f, "FISH CAUGHT!");
+
+    // Fish name
+    r.bot = (int)(panY + 30);
+    ggprint16(&r, 0, 0x00ffffff, "%s", FISH_NAMES[hookedFishIndex]);
+
+    // Running total
+    r.bot = (int)(panY + 10);
+    ggprint16(&r, 0, 0x00aaddff, "Total caught: %d", totalCaught + 1);
+
+    glDisable(GL_BLEND);
+}
+
 void render_skill_check()
 {
 	// Offset to the right of the boat (boat is centered at xres/2)
@@ -1070,14 +1259,9 @@ void render_skill_check()
 		ggprint16(&rHud, 0, col, msg);
 	}
 
-	// "FISH CAUGHT!" banner
-	if (catchMsgTimer > 0.0f) {
-		rHud.bot = (int)(cy + 20);
-		ggprint16(&rHud, 0, 0x00ffe94f, "FISH CAUGHT!");
-	}
-
 	glDisable(GL_BLEND);
 }
+
 
 void render()
 {
@@ -1113,6 +1297,17 @@ void render()
         glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
     	glEnd();
         render_boat();
+
+        // Prompt the player to cast
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        Rect rCast;
+        rCast.center = 1;
+        rCast.left   = g.xres / 2;
+        rCast.bot    = 60;
+        ggprint16(&rCast, 0, 0x00ffffff, "[ Click to cast your rod ]");
+        glDisable(GL_BLEND);
 	}
 	else if (gameState == FISHING) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -1127,7 +1322,13 @@ void render()
         render_boat();
         render_fish_slot(0);
         render_fish_slot(1);
-        render_skill_check();
+        // Only show the skill check UI once a fish has bitten
+        if (fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
+            render_skill_check();
+        // Bite alert flashes over the minigame briefly
+        render_bite_alert();
+        // Caught portrait overlays everything when the fish is landed
+        render_catch_screen();
 	}
 
 }
