@@ -29,11 +29,11 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[10] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
+Image img[11] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png", 
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png", 
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
-    "./assets/images/grieselly_fish.png"};
+    "./assets/images/grieselly_fish.png", "./assets/images/dip_dip.png"};
 
 // for boat machanics 
 float boatBobTime = 0.5f;
@@ -249,6 +249,7 @@ public:
 	GLuint pescadoTex; //spinning senor pescado
 	GLuint partyTex; // pescado party logo
 	GLuint boatTex;
+	GLuint dipDipTex;
 	GLuint fishOneTex;
 	GLuint reynbohTex;
 	GLuint deathSnapperTex;
@@ -262,6 +263,7 @@ public:
 		logoAngle = 0.0f;
 		partyTex = 0;
 		boatTex = 0;
+		dipDipTex = 0;
 		fishOneTex = 0;
 		reynbohTex = 0;
 		deathSnapperTex = 0;
@@ -472,6 +474,17 @@ void init_opengl(void)
                  GL_RGBA, GL_UNSIGNED_BYTE, alphaDataBoat);
 
 	free(alphaDataBoat);
+
+	// dip_dip boat (used when rod is cast)
+	unsigned char *alphaDataDipDip = buildAlphaData(&img[10]);
+	glGenTextures(1, &g.dipDipTex);
+	glBindTexture(GL_TEXTURE_2D, g.dipDipTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[10].width, img[10].height, 0,
+	             GL_RGBA, GL_UNSIGNED_BYTE, alphaDataDipDip);
+	free(alphaDataDipDip);
 
     //milking fish
 	unsigned char *alphaDataMilkingFish = buildAlphaData(&img[5]);
@@ -883,9 +896,9 @@ void render_logo()
 
 
 void render_boat() {
-   
+
     float w = 200.0f;
-	float h = 100.0f;
+    float h = 100.0f;
     float cx = g.xres / 2.0f;
     float cy = (g.yres / 2.0f) - 80.0f;
 
@@ -896,7 +909,8 @@ void render_boat() {
 
     glColor4f(1.0, 1.0, 1.0, 1.0);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, g.boatTex);
+	GLuint activeBoatTex = (gameState == FISHING) ? g.dipDipTex : g.boatTex;
+    glBindTexture(GL_TEXTURE_2D, activeBoatTex);
 	glPushMatrix();
 	glTranslatef(cx, cy + bob, 0.0f);
     glBegin(GL_QUADS);
@@ -1234,6 +1248,15 @@ void render_skill_check()
 	Rect rHud;
 	rHud.center = 1;
 	rHud.left   = (int)cx;
+
+	// Space bar hint (shown while minigame is active)
+	if (fishingPhase == PHASE_MINIGAME) {
+		Rect rHint;
+		rHint.center = 1;
+		rHint.left   = (int)cx;
+		rHint.bot    = (int)(barY - 4);
+		ggprint16(&rHint, 20, 0x00aaddff, "SPACE to reel!");
+	}
 
 	// Streak counter (above circle)
 	if (streak > 1) {
