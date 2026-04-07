@@ -98,52 +98,45 @@ float reelMax        = (float)CHECKS_NEEDED * REEL_HIT_AMT;
 int   totalCaught    = 0;     // fish landed this session
 int   streak         = 0;     // consecutive non-miss checks
 float catchMsgTimer  = 0.0f;  // how long "FISH CAUGHT!" stays up
+const int MAX_ATTEMPTS = 3;
+int attemptCount = 0;  
 
 void start_skill_check();
 void on_skill_result(SkillResult r);
 
 void on_skill_result(SkillResult r) {
+    
+	if (attemptCount < MAX_ATTEMPTS)
+    	attemptCount++;
+
     if (r == SC_GREAT) {
         reelProgress += REEL_GREAT_AMT;
         streak++;
         printf("[SKILL] GREAT HIT  | reel: %.1f / %.1f | streak: %d\n",
                reelProgress, reelMax, streak);
         fflush(stdout);
-        if (reelProgress < reelMax) {
-            printf("[SKILL] Respawning zone at new position, resetting needle\n");
-            fflush(stdout);
-            start_skill_check();
-        }
     } else if (r == SC_HIT) {
         reelProgress += REEL_HIT_AMT;
         streak++;
         printf("[SKILL] GOOD HIT   | reel: %.1f / %.1f | streak: %d\n",
                reelProgress, reelMax, streak);
         fflush(stdout);
-        if (reelProgress < reelMax) {
-            printf("[SKILL] Respawning zone at new position, resetting needle\n");
-            fflush(stdout);
-            start_skill_check();
-        }
     } else {
         reelProgress -= REEL_MISS_AMT;
         if (reelProgress < 0.0f) reelProgress = 0.0f;
         streak = 0;
         printf("[SKILL] MISSED     | reel: %.1f / %.1f | streak reset\n",
                reelProgress, reelMax);
-        printf("[SKILL] Needle will reset after result flash\n");
         fflush(stdout);
     }
 
     if (reelProgress >= reelMax) {
-        // Meter filled: fish is now hooked — but not yet caught.
-        // Transition to PHASE_HOOKED; catching happens in a later step.
         reelProgress     = 0.0f;
         streak           = 0;
         skillCheckActive = false;
         fishingPhase     = PHASE_HOOKED;
-        catchMsgTimer    = 2.0f;   // reuse timer to display the hooked banner
-        printf("[REEL] *** FISH HOOKED! (not yet caught) ***\n");
+        catchMsgTimer    = 2.0f;
+        printf("[REEL] *** FISH HOOKED! ***\n");
         fflush(stdout);
     }
 }
@@ -183,6 +176,7 @@ void reset_fishing_state() {
     catchMsgTimer    = 0.0f;
     resultTimer      = 0.0f;
     skillResult      = SC_NONE;
+	attemptCount     = 0; 
 }
 
 float normalizeAngle(float a) {
@@ -695,16 +689,46 @@ void physics()
 
 		// ── Phase 1: waiting for a bite ──────────────────────────
 		if (fishingPhase == PHASE_WAITING) {
-			biteTimer -= dt;
-			if (biteTimer <= 0.0f) {
-				// Pick which fish has attached to the bobber
-				uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
-				hookedFishIndex = fishDist(gen);
-				biteAlertTimer  = 1.5f; // show "! FISH ON THE LINE !" for 1.5s
-				fishingPhase = PHASE_MINIGAME;
-				printf("[FISHING] Fish on the bobber! Fish type: %d. Minigame starting!\n", hookedFishIndex);
-				fflush(stdout);
-				start_skill_check();
+			float boatX = g.xres / 2.0f;
+			float proximityThreshold = 160.0f;
+			int nearSlot = -1;
+			int nearCount = 0;
+
+			for (int s = 0; s < 2; s++) {
+				float dist = fabsf(slotX[s] - boatX);
+				if (dist < proximityThreshold) {
+					nearSlot = s;
+					nearCount++;
+				}
+			}
+
+			// Only tick the timer down when exactly one fish is near the boat
+			if (nearCount == 1) {
+				biteTimer -= dt;
+
+				if (biteTimer <= 0.0f) {
+					// Roll a random chance to actually bite
+					uniform_real_distribution<float> chanceDist(0.0f, 1.0f);
+					if (chanceDist(gen) < 0.15f) {
+						// Fish swims past without biting — reset timer for next pass
+						uniform_real_distribution<float> biteDist(0.5f, 2.0f);
+						biteDelay = biteDist(gen);
+						biteTimer = biteDelay;
+						printf("[FISHING] Fish passed without biting. Next window: %.1f s\n", biteDelay);
+						fflush(stdout);
+					} else {
+						// Fish bites!
+						hookedFishIndex = slotFish[nearSlot];
+						biteAlertTimer  = 1.5f;
+						fishingPhase    = PHASE_MINIGAME;
+						printf("[FISHING] Fish on the bobber! Fish type: %d. Minigame starting!\n", hookedFishIndex);
+						fflush(stdout);
+						start_skill_check();
+					}
+				}
+			} else {
+				// No fish nearby — reset the timer so it only counts during proximity
+				biteTimer = biteDelay;
 			}
 		}
 
@@ -724,9 +748,17 @@ void physics()
 				if (resultTimer <= 0.0f) {
 					resultTimer = 0.0f;
 					skillResult = SC_NONE;
-					// Only restart if we're still in the minigame phase
-					if (fishingPhase == PHASE_MINIGAME)
-						start_skill_check();
+
+					if (fishingPhase == PHASE_MINIGAME) {
+						if (attemptCount < MAX_ATTEMPTS) {
+							start_skill_check();
+						} else {
+							printf("[FISHING] Fish got away after %d attempts.\n", attemptCount);
+							fflush(stdout);
+							reset_fishing_state();
+							gameState = PLAY;
+						}
+					}
 				}
 			}
 		}
@@ -748,6 +780,10 @@ void physics()
 
 		// ── Fish swimming animation (always runs in FISHING) ─────
 		for (int s = 0; s < 2; s++) {
+			if (fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED) {
+        	if (slotFish[s] == hookedFishIndex) continue;
+    	}
+
 			int   fi    = slotFish[s];
 			float speed = FISH_SPEED[fi];
 			slotBob[s] += FISH_BOB_SPEED[fi];
@@ -1256,6 +1292,9 @@ void render_skill_check()
 		rHint.left   = (int)cx;
 		rHint.bot    = (int)(barY - 4);
 		ggprint16(&rHint, 20, 0x00aaddff, "SPACE to reel!");
+		rHint.bot = (int)(barY - 24);
+    	unsigned int attemptCol = (MAX_ATTEMPTS - attemptCount == 1) ? 0x00ff4f4f : 0x00ffffff;
+    	ggprint16(&rHint, 0, attemptCol, "Attempts: %d / %d", attemptCount, MAX_ATTEMPTS);
 	}
 
 	// Streak counter (above circle)
