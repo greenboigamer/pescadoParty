@@ -29,13 +29,13 @@ enum GameState {
 
 GameState gameState = MENU;
 
-Image img[11] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png", 
-    "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png", 
-    "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png", 
+Image img[11] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png",
+    "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png",
+    "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png",
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
     "./assets/images/grieselly_fish.png", "./assets/images/dip_dip.png"};
 
-// for boat machanics 
+// for boat machanics
 float boatBobTime = 0.5f;
 float boatBobAmp = 3.0f;
 float boatBobSpeed = 0.20f;
@@ -838,11 +838,11 @@ void render_senor_pescado() {
     float boxRight  = box.pos[0] + box.width * 0.5f;
     float boxBottom = box.pos[1];
     float boxTop    = box.pos[1] + box.height;
-    
+
     float drawW = 70.0f;
     float drawH = 70.0f;
 
-   
+
     float padRight = 25.0f;
     float cx = boxRight - padRight - drawW * 0.5f;
     float cy = (boxBottom + boxTop) * 0.5f;
@@ -855,7 +855,7 @@ void render_senor_pescado() {
     glBindTexture(GL_TEXTURE_2D, g.pescadoTex);
 
 	glPushMatrix();
-	glTranslatef(cx, cy, 0.0f); 
+	glTranslatef(cx, cy, 0.0f);
 	glRotatef(g.logoAngle, 0.0f, 0.0f, 1.0f);
 
    	glBegin(GL_QUADS);
@@ -871,7 +871,7 @@ void render_senor_pescado() {
 
 }
 
-void render_logo() 
+void render_logo()
 {
 
     float w = 500.0f;
@@ -897,8 +897,16 @@ void render_logo()
 
 void render_boat() {
 
-    float w = 200.0f;
-    float h = 100.0f;
+    float scale = 4.0f;
+    float w, h;
+
+    if (gameState == FISHING) {
+        w = img[10].width  * scale;
+        h = img[10].height * scale;
+    } else {
+        w = img[4].width  * scale;
+        h = img[4].height * scale;
+    }
     float cx = g.xres / 2.0f;
     float cy = (g.yres / 2.0f) - 80.0f;
 
@@ -921,7 +929,7 @@ void render_boat() {
     glEnd();
 	glDisable(GL_BLEND);
 	glPopMatrix();
-    
+
 }
 
 void render_fish_slot(int s) {
