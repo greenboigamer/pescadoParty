@@ -37,7 +37,8 @@ Image img[13] = {"./assets/images/fish.jpg", "./assets/images/background_fishing
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png",
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png",
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
-    "./assets/images/grieselly_fish.png", "./assets/images/dip_dip.png", "./assets/images/shop.png", "./assets/images/brown_cow_in_a_suit.png"};
+    "./assets/images/grieselly_fish.png", "./assets/images/dip_dip.png", 
+    "./assets/images/shop.png", "./assets/images/brown_cow_in_a_suit.png"};
 
 // for boat machanics
 float boatBobTime = 0.5f;
@@ -94,8 +95,8 @@ bool  skillCheckActive  = false;
 float needleAngle       = 0.0f;
 float needleSpeed       = 1.8f;
 float scZoneStart       = 0.5f;
-const float SC_ZONE_SIZE    = 0.30f;
-const float SC_PERFECT_SIZE = 0.08f;
+const float SC_ZONE_SIZE    = 0.60f;
+const float SC_PERFECT_SIZE = 0.2f;
 
 // Result display
 enum SkillResult { SC_NONE, SC_MISS, SC_HIT, SC_GREAT };
@@ -105,7 +106,7 @@ float       resultTimer = 0.0f;
 // ── Catch / reeling system ───────────────────────────────────
 // A "catch" requires CHECKS_NEEDED successful hits in a row.
 // Missing resets progress. Greats count double toward reelProgress.
-const int   CHECKS_NEEDED  = 3;     // hits needed to land a fish
+const int   CHECKS_NEEDED  = 5;     // hits needed to land a fish
 const float REEL_HIT_AMT   = 1.0f; // progress per good hit
 const float REEL_GREAT_AMT = 2.0f; // progress per great hit
 const float REEL_MISS_AMT  = 1.5f; // progress lost on miss
@@ -115,7 +116,7 @@ float reelMax        = (float)CHECKS_NEEDED * REEL_HIT_AMT;
 int   totalCaught    = 0;     // fish landed this session
 int   streak         = 0;     // consecutive non-miss checks
 float catchMsgTimer  = 0.0f;  // how long "FISH CAUGHT!" stays up
-const int MAX_ATTEMPTS = 4;
+const int MAX_ATTEMPTS = 5;
 int attemptCount = 0;  
 
 void start_skill_check();
