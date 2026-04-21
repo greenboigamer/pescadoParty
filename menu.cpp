@@ -740,38 +740,53 @@ void physics()
 		}
 		lastTime = now;
 
-		// ── Phase 1: waiting for a bite ──────────────────────────
+		// ── Phase 1: waiting for a bite ──────────────────────────────
 		if (fishingPhase == PHASE_WAITING) {
-			float boatX = g.xres / 2.0f;
-			float proximityThreshold = 160.0f;
-			int nearSlot = -1;
-			int nearCount = 0;
+			// Boat geometry: centered at (xres/2, varies), scaled 4x
+			float boatW   = img[4].width  * 4.0f;
+			float boatH   = img[4].height * 4.0f;
+			float boatCX  = g.xres / 2.0f;
+			float boatCY  = (g.yres / 2.0f) - 80.0f + sinf(boatBobTime) * boatBobAmp;
+
+			// Left quarter of the boat: from left edge to 25% across
+			float boatLeft      = boatCX - boatW * 0.5f;
+			float boatLQRight   = boatCX - boatW * 0.25f;   // left-quarter right edge
+			float boatYBot      = boatCY - boatH * 0.5f;
+			float boatYTop      = boatCY + boatH * 0.5f;
+
+			int overlapSlot = -1;
 
 			for (int s = 0; s < 2; s++) {
-				float dist = fabsf(slotX[s] - boatX);
-				if (dist < proximityThreshold) {
-					nearSlot = s;
-					nearCount++;
+				int   fi      = slotFish[s];
+				float fishL   = slotX[s] - FISH_W[fi] * 0.5f;
+				float fishR   = slotX[s] + FISH_W[fi] * 0.5f;
+				float bob     = sinf(slotBob[s]) * FISH_BOB_AMP[fi];
+				float fishBot = FISH_CY[fi] + bob - FISH_H[fi] * 0.5f;
+				float fishTop = FISH_CY[fi] + bob + FISH_H[fi] * 0.5f;
+
+				// AABB vs left-quarter of boat
+				bool xOverlap = fishR > boatLeft   && fishL < boatLQRight;
+				bool yOverlap = fishTop > boatYBot && fishBot < boatYTop;
+
+				if (xOverlap && yOverlap) {
+					overlapSlot = s;
+					break;
 				}
 			}
 
-			// Only tick the timer down when exactly one fish is near the boat
-			if (nearCount == 1) {
+			if (overlapSlot != -1) {
 				biteTimer -= dt;
 
 				if (biteTimer <= 0.0f) {
-					// Roll a random chance to actually bite
 					uniform_real_distribution<float> chanceDist(0.0f, 1.0f);
 					if (chanceDist(gen) < 0.15f) {
-						// Fish swims past without biting — reset timer for next pass
 						uniform_real_distribution<float> biteDist(0.5f, 2.0f);
 						biteDelay = biteDist(gen);
 						biteTimer = biteDelay;
 						printf("[FISHING] Fish passed without biting. Next window: %.1f s\n", biteDelay);
 						fflush(stdout);
 					} else {
-						// Fish bites!
-						hookedFishIndex = slotFish[nearSlot];
+						hookedFishIndex = slotFish[overlapSlot];
 						biteAlertTimer  = 1.5f;
 						fishingPhase    = PHASE_MINIGAME;
 						printf("[FISHING] Fish on the bobber! Fish type: %d. Minigame starting!\n", hookedFishIndex);
@@ -780,7 +795,7 @@ void physics()
 					}
 				}
 			} else {
-				// No fish nearby — reset the timer so it only counts during proximity
+				// No fish overlapping the hook zone — reset timer
 				biteTimer = biteDelay;
 			}
 		}
