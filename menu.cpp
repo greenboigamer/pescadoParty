@@ -58,12 +58,14 @@ const float FISH_H[NUM_FISH]         = { 120.0f, 100.0f, 110.0f, 110.0f, 105.0f 
 
 // Fish display names matching the pool order
 const char* FISH_NAMES[NUM_FISH] = {
-    "Exo Trout", "Grieselly Fish", "Death Snapper", "Milking Fish", "Reynboh Pescado"
+     "Milking Fish", "Reynboh Pescado", "Death Snapper", "Exo Trout", "Grieselly Fish"
 };
 
 const int FISH_PRICES[NUM_FISH] = { 5, 20, 35, 40, 10 };
 // Milking Fish, Reynboh, Death Snapper, Exo Trout, Grieselly
 
+enum ShopResponse { RESP_NONE, RESP_HAS_FISH, RESP_NO_FISH, RESP_SOLD };
+ShopResponse shopResponse = RESP_NONE;
 int fishInventory[NUM_FISH] = { 0, 0, 0, 0, 0 };
 int playerGold   = 0;
 int shopSelected = 0;
@@ -680,17 +682,19 @@ int check_keys(XEvent *e)
 			return 1;
 		}
 		// remove after testing
-		// if (key == XK_g || key == XK_G) {
-		// 	for (int i = 0; i < NUM_FISH; i++)
-		// 		fishInventory[i]++;
-		// 	printf("[TEST] Added 1 of each fish to inventory\n");
-		// 	fflush(stdout);
-		// }
+		if (key == XK_g || key == XK_G) {
+			for (int i = 0; i < NUM_FISH; i++)
+				fishInventory[i]++;
+			printf("[TEST] Added 1 of each fish to inventory\n");
+			fflush(stdout);
+		}
 		//open shop 
 		if ((key == XK_s || key == XK_S) && gameState == PLAY) {
 			gameState = SHOPPING;
     		uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
     		requestedFish = fishDist(gen);
+
+			shopResponse = (fishInventory[requestedFish] > 0) ? RESP_HAS_FISH : RESP_NO_FISH;
 		}
 		///back to fishing button from shop 
 		if (gameState == SHOPPING) {
@@ -755,22 +759,21 @@ int check_keys(XEvent *e)
     		}	
 		}
 
-		if (gameState == SHOPPING) {
-    		if (key == XK_Return || key == XK_space) {
-        // Only sell the fish the customer actually wants
-				if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
-					fishInventory[requestedFish]--;
-					playerGold += FISH_PRICES[requestedFish];
-					// Pick a new requested fish for the next customer
-					uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
-					requestedFish = fishDist(gen);
-					printf("[SHOP] Sold! Gold: %d. Next customer wants: %s\n",
-						playerGold, FISH_NAMES[requestedFish]);
-					fflush(stdout);
+			if (gameState == SHOPPING) {
+				if (key == XK_Return || key == XK_space) {
+					if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
+						fishInventory[requestedFish]--;
+						playerGold += FISH_PRICES[requestedFish];
+						shopResponse = RESP_SOLD;
+						// Pick a new requested fish after selling
+						uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
+						requestedFish = fishDist(gen);
+						printf("[SHOP] Sold! Gold: %d\n", playerGold);
+						fflush(stdout);
+					}
 				}
-    		}
+			}
 		}
-	}
 	return 0;
 }
 
@@ -1098,14 +1101,15 @@ void open_shop(){
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
-	float fishScale = 0.100f;
+	float fishScale = 0.700f;
 
 	// Top shelf — first 2 fish
 	float topShelfY  = 95.0f;  // tweak to sit on your top shelf
-	float topStartX  = 3790.0f;  // tweak to align with shelf left edge
+	float topStartX  = 390.0f;  // tweak to align with shelf left edge
 	float topSpacing = 90.0f;
 
 	for (int i = 0; i < 2; i++) {
+		if (fishInventory[i] <= 0) continue;
 		float fw = FISH_W[i] * fishScale;
 		float fh = FISH_H[i] * fishScale;
 		float fx = topStartX + i * topSpacing;
@@ -1137,6 +1141,7 @@ void open_shop(){
 	float botSpacing = 90.0f;
 
 	for (int i = 2; i < NUM_FISH; i++) {
+		if (fishInventory[i] <= 0) continue;
 		float fw = FISH_W[i] * fishScale;
 		float fh = FISH_H[i] * fishScale;
 		float fx = botStartX + (i - 2) * botSpacing;
@@ -1235,7 +1240,54 @@ void open_shop(){
                   "Howdy! Can I get a %s?",
                   FISH_NAMES[requestedFish]);
     }
-    glDisable(GL_BLEND);
+
+	float respBoxW = 400.0f;
+	float respBoxH = 40.0f;
+	float respBoxX = cx - respBoxW / 2.0f;
+	float respBoxY = boxY - respBoxH - 10.0f; // sits below the customer box
+
+	glDisable(GL_TEXTURE_2D);
+
+	// Different color from customer box so they're visually distinct
+	glColor3ub(100, 180, 130); // soft green for the owner
+	glBegin(GL_QUADS);
+		glVertex2f(respBoxX,            respBoxY);
+		glVertex2f(respBoxX,            respBoxY + respBoxH);
+		glVertex2f(respBoxX + respBoxW, respBoxY + respBoxH);
+		glVertex2f(respBoxX + respBoxW, respBoxY);
+	glEnd();
+
+	glColor3ub(0, 0, 0);
+	glBegin(GL_LINE_LOOP);
+		glVertex2f(respBoxX,            respBoxY);
+		glVertex2f(respBoxX,            respBoxY + respBoxH);
+		glVertex2f(respBoxX + respBoxW, respBoxY + respBoxH);
+		glVertex2f(respBoxX + respBoxW, respBoxY);
+	glEnd();
+
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	Rect rResp;
+	rResp.center = 1;
+	rResp.left   = (int)cx;
+	rResp.bot    = (int)(respBoxY + 12);
+
+	if (shopResponse == RESP_HAS_FISH && requestedFish >= 0) {
+		ggprint16(&rResp, 0, 0x00000000,
+				"Yep! I got %d %s(s). Here ya go!",
+				fishInventory[requestedFish] + 1, // +1 because sale hasn't decremented yet at render time
+				FISH_NAMES[requestedFish]);
+	} else if (shopResponse == RESP_NO_FISH && requestedFish >= 0) {
+		ggprint16(&rResp, 0, 0x00000000,
+				"Sorry, I don't have any %s.",
+				FISH_NAMES[requestedFish]);
+	} else {
+		ggprint16(&rResp, 0, 0x00000000, "Welcome to the shop!");
+	}
+
+	glDisable(GL_BLEND);
 
 
 }
