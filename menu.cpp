@@ -791,6 +791,20 @@ void physics()
 
 	if (gameState == PLAY || gameState == FISHING) {
 		boatBobTime += boatBobSpeed;
+
+		// Keep fish swimming in PLAY so they don't reset when returning from FISHING
+		for (int s = 0; s < 2; s++) {
+			// Freeze whichever slot holds the hooked fish during minigame/catch screen
+			if ((fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
+				&& slotFish[s] == hookedFishIndex) {
+				slotBob[s] += FISH_BOB_SPEED[slotFish[s]]; // still bob in place
+				continue; // skip movement
+			}
+
+			int   fi    = slotFish[s];
+			slotBob[s] += FISH_BOB_SPEED[fi];
+			slotX[s]   += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
+		}
 	}
 
 	if (gameState == FISHING) {
@@ -808,46 +822,29 @@ void physics()
 
 		// ── Phase 1: waiting for a bite ──────────────────────────
 		if (fishingPhase == PHASE_WAITING) {
-			float boatX = g.xres / 2.0f;
-			float proximityThreshold = 160.0f;
-			int nearSlot = -1;
-			int nearCount = 0;
+			// The rod tip sits at the LEFT quarter of the boat.
+			// Boat center is at xres/2; boat width scales with img[10].
+			float boatW      = img[10].width * 4.0f;   // same scale as render_boat()
+			float boatCX     = g.xres / 2.0f;
+			float rodTipX    = boatCX - boatW * 0.25f; // 1/4 from left edge = left quarter
+			float hitZoneW   = 24.0f;                  // width of the collision zone around the rod
 
 			for (int s = 0; s < 2; s++) {
-				float dist = fabsf(slotX[s] - boatX);
-				if (dist < proximityThreshold) {
-					nearSlot = s;
-					nearCount++;
-				}
-			}
+				float fishCX = slotX[s]; // center of the fish sprite
 
-			// Only tick the timer down when exactly one fish is near the boat
-			if (nearCount == 1) {
-				biteTimer -= dt;
+				float zoneL = rodTipX - hitZoneW / 2.0f;
+				float zoneR = rodTipX + hitZoneW / 2.0f;
 
-				if (biteTimer <= 0.0f) {
-					// Roll a random chance to actually bite
-					uniform_real_distribution<float> chanceDist(0.0f, 1.0f);
-					if (chanceDist(gen) < 0.15f) {
-						// Fish swims past without biting — reset timer for next pass
-						uniform_real_distribution<float> biteDist(0.5f, 2.0f);
-						biteDelay = biteDist(gen);
-						biteTimer = biteDelay;
-						printf("[FISHING] Fish passed without biting. Next window: %.1f s\n", biteDelay);
-						fflush(stdout);
-					} else {
-						// Fish bites!
-						hookedFishIndex = slotFish[nearSlot];
-						biteAlertTimer  = 1.5f;
-						fishingPhase    = PHASE_MINIGAME;
-						printf("[FISHING] Fish on the bobber! Fish type: %d. Minigame starting!\n", hookedFishIndex);
-						fflush(stdout);
-						start_skill_check();
-					}
+				bool overlaps = (fishCX >= zoneL && fishCX <= zoneR);
+				if (overlaps) {
+					hookedFishIndex = slotFish[s];
+					biteAlertTimer  = 1.5f;
+					fishingPhase    = PHASE_MINIGAME;
+					printf("[FISHING] Fish collided with rod! Fish type: %d. Minigame starting!\n", hookedFishIndex);
+					fflush(stdout);
+					start_skill_check();
+					break;
 				}
-			} else {
-				// No fish nearby — reset the timer so it only counts during proximity
-				biteTimer = biteDelay;
 			}
 		}
 
@@ -1733,6 +1730,8 @@ void render()
         glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
     	glEnd();
         render_boat();
+		render_fish_slot(0);  // add this
+    	render_fish_slot(1);
 
         // Prompt the player to cast
         glEnable(GL_TEXTURE_2D);
