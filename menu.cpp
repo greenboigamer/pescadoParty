@@ -6,6 +6,9 @@
 #include <unistd.h>
 #include <math.h>
 #include <sys/time.h>
+#include <cstdlib>
+#include <GL/gl.h>
+#include <GL/glu.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 #include <GL/glx.h>
@@ -54,8 +57,15 @@ const float FISH_H[NUM_FISH]         = { 120.0f, 100.0f, 110.0f, 110.0f, 105.0f 
 
 // Fish display names matching the pool order
 const char* FISH_NAMES[NUM_FISH] = {
-    "Milking Fish", "Reynboh Pescado", "Death Snapper", "Exo Trout", "Grieselly Fish"
+    "Exo Trout", "Grieselly Fish", "Death Snapper", "Milking Fish", "Reynboh Pescado"
 };
+
+const int FISH_PRICES[NUM_FISH] = { 5, 20, 35, 40, 10 };
+// Milking Fish, Reynboh, Death Snapper, Exo Trout, Grieselly
+
+int fishInventory[NUM_FISH] = { 0, 0, 0, 0, 0 };
+int playerGold   = 0;
+int shopSelected = 0;
 
 // Two active fish slots: slot 0 travels right, slot 1 travels left
 // Each slot independently cycles through the fish pool
@@ -105,7 +115,7 @@ float reelMax        = (float)CHECKS_NEEDED * REEL_HIT_AMT;
 int   totalCaught    = 0;     // fish landed this session
 int   streak         = 0;     // consecutive non-miss checks
 float catchMsgTimer  = 0.0f;  // how long "FISH CAUGHT!" stays up
-const int MAX_ATTEMPTS = 3;
+const int MAX_ATTEMPTS = 4;
 int attemptCount = 0;  
 
 void start_skill_check();
@@ -145,6 +155,8 @@ void on_skill_result(SkillResult r) {
         skillCheckActive = false;
         fishingPhase     = PHASE_HOOKED;
         catchMsgTimer    = 2.0f;
+		if (hookedFishIndex >= 0 && hookedFishIndex < NUM_FISH)
+        fishInventory[hookedFishIndex]++;
         printf("[REEL] *** FISH HOOKED! ***\n");
         fflush(stdout);
     }
@@ -261,6 +273,7 @@ public:
 	GLuint shopTex;
 	GLuint brownTex;
 	float logoAngle;
+	//int fps; 
 	Global() {
 		xres=640, yres=480;
 		fishingTex = 0;
@@ -383,6 +396,8 @@ void render(void);
 //===========================================================================
 int main()
 {
+	int nframes = 0;
+    int starttime = time(NULL);
 	init_opengl();
 	int done=0;
 	while (!done) {
@@ -394,6 +409,13 @@ int main()
 		}
 		physics();
 		render();
+		nframes++;
+		int currtime = time(NULL);
+        if (currtime > starttime) {
+            starttime = currtime;
+            //g.fps = nframes;
+            nframes = 0;
+        }
 		x11.swapBuffers();
 	}
 	return 0;
@@ -624,7 +646,7 @@ void check_mouse(XEvent *e)
                 uniform_real_distribution<float> biteDist(2.0f, 6.0f);
                 biteDelay = biteDist(gen);
                 biteTimer = biteDelay;
-                printf("[FISHING] Bite expected in %.1f seconds\n", biteDelay);
+                //printf("[FISHING] Bite expected in %.1f seconds\n", biteDelay);
                 fflush(stdout);
             }
 		}
@@ -656,6 +678,13 @@ int check_keys(XEvent *e)
     		}
 			return 1;
 		}
+		// remove after testing
+		// if (key == XK_g || key == XK_G) {
+		// 	for (int i = 0; i < NUM_FISH; i++)
+		// 		fishInventory[i]++;
+		// 	printf("[TEST] Added 1 of each fish to inventory\n");
+		// 	fflush(stdout);
+		// }
 		//open shop 
 		if ((key == XK_s || key == XK_S) && gameState == PLAY) {
 			gameState = SHOPPING;
@@ -706,6 +735,39 @@ int check_keys(XEvent *e)
 				menuSelected = (menuSelected + 1 + menuCount) % menuCount;
 			if (key == XK_Return)
 				select_menu_option(menuSelected);
+		}
+
+
+		if (gameState == SHOPPING) {
+    		if (key == XK_Up   || key == XK_w)
+        	shopSelected = (shopSelected - 1 + NUM_FISH) % NUM_FISH;
+    		if (key == XK_Down || key == XK_s)
+       		shopSelected = (shopSelected + 1) % NUM_FISH;
+    		if (key == XK_Return || key == XK_space) {
+				if (fishInventory[shopSelected] > 0) {
+					fishInventory[shopSelected]--;
+					playerGold += FISH_PRICES[shopSelected];
+					printf("[SHOP] Sold 1x %s for %d gold. Total: %d\n",
+					FISH_NAMES[shopSelected], FISH_PRICES[shopSelected], playerGold);
+				fflush(stdout);
+				}
+    		}	
+		}
+
+		if (gameState == SHOPPING) {
+    		if (key == XK_Return || key == XK_space) {
+        // Only sell the fish the customer actually wants
+				if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
+					fishInventory[requestedFish]--;
+					playerGold += FISH_PRICES[requestedFish];
+					// Pick a new requested fish for the next customer
+					uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
+					requestedFish = fishDist(gen);
+					printf("[SHOP] Sold! Gold: %d. Next customer wants: %s\n",
+						playerGold, FISH_NAMES[requestedFish]);
+					fflush(stdout);
+				}
+    		}
 		}
 	}
 	return 0;
@@ -1025,30 +1087,117 @@ void render_shop_back_button()
 
 void open_shop(){
 
-	float scale = 4.0f;
-	float w = img[12].width  * scale;
-    float h = img[12].height * scale;
-	float cx = g.xres / 2.0f;
-    float cy = g.yres - 265.0f;
-	
+	GLuint fishTextures[NUM_FISH] = {
+	g.fishOneTex, g.reynbohTex, g.deathSnapperTex,
+	g.exoTroutTex, g.griesellyTex
+	};
+
 	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+	float fishScale = 0.100f;
+
+	// Top shelf — first 2 fish
+	float topShelfY  = 95.0f;  // tweak to sit on your top shelf
+	float topStartX  = 3790.0f;  // tweak to align with shelf left edge
+	float topSpacing = 90.0f;
+
+	for (int i = 0; i < 2; i++) {
+		float fw = FISH_W[i] * fishScale;
+		float fh = FISH_H[i] * fishScale;
+		float fx = topStartX + i * topSpacing;
+
+		glBindTexture(GL_TEXTURE_2D, fishTextures[i]);
+		glPushMatrix();
+		glTranslatef(fx, topShelfY, 0.0f);
+		glBegin(GL_QUADS);
+			glTexCoord2f(0.0f, 1.0f); glVertex2f(-fw/2, -fh/2);
+			glTexCoord2f(0.0f, 0.0f); glVertex2f(-fw/2,  fh/2);
+			glTexCoord2f(1.0f, 0.0f); glVertex2f( fw/2,  fh/2);
+			glTexCoord2f(1.0f, 1.0f); glVertex2f( fw/2, -fh/2);
+		glEnd();
+		glPopMatrix();
+
+		// Only show quantity badge if you own that fish
+		// if (fishInventory[i] > 0) {
+		// 	Rect rQty;
+		// 	rQty.center = 1;
+		// 	rQty.left   = (int)fx;
+		// 	rQty.bot    = (int)(topShelfY + fh/2 + 4);
+		// 	ggprint16(&rQty, 0, 0x00ffffff, "x%d", fishInventory[i]);
+		// }
+	}
+
+	// Bottom shelf — last 3 fish
+	float botShelfY  = 50.0f;  // tweak to sit on your bottom shelf
+	float botStartX  = 330.0f;   // tweak to align with shelf left edge
+	float botSpacing = 90.0f;
+
+	for (int i = 2; i < NUM_FISH; i++) {
+		float fw = FISH_W[i] * fishScale;
+		float fh = FISH_H[i] * fishScale;
+		float fx = botStartX + (i - 2) * botSpacing;
+
+		glBindTexture(GL_TEXTURE_2D, fishTextures[i]);
+		glPushMatrix();
+		glTranslatef(fx, botShelfY, 0.0f);
+		glBegin(GL_QUADS);
+			glTexCoord2f(0.0f, 1.0f); glVertex2f(-fw/2, -fh/2);
+			glTexCoord2f(0.0f, 0.0f); glVertex2f(-fw/2,  fh/2);
+			glTexCoord2f(1.0f, 0.0f); glVertex2f( fw/2,  fh/2);
+			glTexCoord2f(1.0f, 1.0f); glVertex2f( fw/2, -fh/2);
+		glEnd();
+		glPopMatrix();
+
+		// if (fishInventory[i] > 0) {
+		// 	Rect rQty;
+		// 	rQty.center = 1;
+		// 	rQty.left   = (int)fx;
+		// 	rQty.bot    = (int)(botShelfY + fh/2 + 4);
+		// 	ggprint16(&rQty, 0, 0x00ffffff, "x%d", fishInventory[i]);
+		// }
+	}
+
+	glDisable(GL_BLEND);
+
+	// ── Gold display (top left corner, always visible) ───────
+	glEnable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect rGold;
+	rGold.center = 0;
+	rGold.left   = 10;
+	rGold.bot    = g.yres - 20;
+	ggprint16(&rGold, 0, 0x00000000, "Gold: %d", playerGold);
+	glDisable(GL_BLEND);
+
+
+	float scale = 4.0f;
+    float w = img[12].width  * scale;
+    float h = img[12].height * scale;
+    float cx = g.xres / 2.0f;
+    float cy = g.yres - 265.0f;
+    
+    glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
 
     glColor4f(1.0, 1.0, 1.0, 1.0);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBindTexture(GL_TEXTURE_2D, g.brownTex);
-	glPushMatrix();
-	glTranslatef(cx, cy, 0.0f);
+    glPushMatrix();
+    glTranslatef(cx, cy, 0.0f);
     glBegin(GL_QUADS);
         glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/4, -h/4);
         glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/4, h/4);
         glTexCoord2f(1.0f, 0.0f); glVertex2f(w/4, h/4);
         glTexCoord2f(1.0f, 1.0f); glVertex2f(w/4, -h/4);
     glEnd();
-	glDisable(GL_BLEND);
-	glPopMatrix();
+    glDisable(GL_BLEND);
+    glPopMatrix();
 
-	glDisable(GL_TEXTURE_2D);
+    glDisable(GL_TEXTURE_2D);
     glColor3ub(255, 127, 80);
 
     float boxW = 350.0f;
@@ -1063,7 +1212,7 @@ void open_shop(){
         glVertex2f(boxX + boxW,  boxY);
     glEnd();
 
-	glColor3ub(0, 0, 0);
+    glColor3ub(0, 0, 0);
     glBegin(GL_LINE_LOOP);
         glVertex2f(boxX,         boxY);
         glVertex2f(boxX,         boxY + boxH);
@@ -1071,21 +1220,22 @@ void open_shop(){
         glVertex2f(boxX + boxW,  boxY);
     glEnd();
 
-	glEnable(GL_TEXTURE_2D);
+    glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	
-	Rect r;
+    
+    Rect r;
     r.center = 1;
     r.left = (int)cx;
     r.bot = (int)(boxY + 12);
 
-	if (requestedFish >= 0 && requestedFish < NUM_FISH) {
+    if (requestedFish >= 0 && requestedFish < NUM_FISH) {
         ggprint16(&r, 0, 0x00000000,
                   "Howdy! Can I get a %s?",
                   FISH_NAMES[requestedFish]);
     }
-	glDisable(GL_BLEND);
+    glDisable(GL_BLEND);
+
 
 }
 
@@ -1490,6 +1640,12 @@ void render_skill_check()
 
 void render()
 {
+	// Rect rFPS;
+    // rFPS.bot = g.yres - 24;
+    // rFPS.left = 10;
+    // rFPS.center = 0;
+    // ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+
 	if (gameState == MENU) {
 	glClear(GL_COLOR_BUFFER_BIT);
 	glColor3f(1.0, 1.0, 1.0);
@@ -1509,6 +1665,8 @@ void render()
 	render_menu();
     render_logo();
 	render_senor_pescado();
+    //ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+	
 
 	}
 	else if (gameState == PLAY) {
@@ -1533,6 +1691,9 @@ void render()
         rCast.bot    = 60;
         ggprint16(&rCast, 0, 0x00ffffff, "[ Click to cast your rod ]");
         glDisable(GL_BLEND);
+
+    	//ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+
 	}
 	else if (gameState == FISHING) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -1554,6 +1715,8 @@ void render()
         render_bite_alert();
         // Caught portrait overlays everything when the fish is landed
         render_catch_screen();
+   // ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+
 	}
 	
 	else if (gameState == SHOPPING) {
@@ -1569,6 +1732,8 @@ void render()
         glEnd();
 		open_shop();
 		render_shop_back_button();
+    //ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+
 
 	}
 
