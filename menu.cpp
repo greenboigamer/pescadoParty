@@ -841,6 +841,14 @@ int check_keys(XEvent *e)
 			return 1;
 		}
 
+		// remove after testing
+		 if (key == XK_g || key == XK_G) {
+		 	for (int i = 0; i < NUM_FISH; i++)
+		 		fishInventory[i]++;
+		 	printf("[TEST] Added 1 of each fish to inventory\n");
+		 	fflush(stdout);
+		 }
+		//open shop 
 		if ((key == XK_s || key == XK_S) && gameState == PLAY) {
 			gameState = SHOPPING;
 			uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
@@ -1433,6 +1441,18 @@ void render_shop_back_button()
 	ggprint16(&r, 0, 0x00000000, "[B] Back to Fishing");
 	glDisable(GL_BLEND);
 }
+	float fishScale = 0.700f;
+
+	// Top shelf — first 2 fish
+	float topShelfY  = 95.0f;
+	float topStartX  = 390.0f;
+	float topSpacing = 90.0f;
+
+	for (int i = 0; i < 2; i++) {
+		if (fishInventory[i] <= 0) continue; 
+		float fw = FISH_W[i] * fishScale;
+		float fh = FISH_H[i] * fishScale;
+		float fx = topStartX + i * topSpacing;
 
 void open_shop()
 {
@@ -1452,11 +1472,21 @@ void open_shop()
 			glTexCoord2f(1,0);glVertex2f(fw/2,fh/2);   glTexCoord2f(1,1);glVertex2f(fw/2,-fh/2);
 		glEnd(); glPopMatrix();
 	}
-	float botShelfY=50,botStartX=330,botSpacing=90;
-	for (int i=2;i<NUM_FISH;i++){
-		float fw=FISH_W[i]*fishScale, fh=FISH_H[i]*fishScale, fx=botStartX+(i-2)*botSpacing;
-		glBindTexture(GL_TEXTURE_2D,fishTextures[i]);
-		glPushMatrix(); glTranslatef(fx,botShelfY,0);
+
+	// Bottom shelf — last 3 fish
+	float botShelfY  = 50.0f;
+	float botStartX  = 330.0f;
+	float botSpacing = 90.0f;
+
+	for (int i = 2; i < NUM_FISH; i++) {
+		if (fishInventory[i] <= 0) continue; 
+		float fw = FISH_W[i] * fishScale;
+		float fh = FISH_H[i] * fishScale;
+		float fx = botStartX + (i - 2) * botSpacing;
+
+		glBindTexture(GL_TEXTURE_2D, fishTextures[i]);
+		glPushMatrix();
+		glTranslatef(fx, botShelfY, 0.0f);
 		glBegin(GL_QUADS);
 			glTexCoord2f(0,1);glVertex2f(-fw/2,-fh/2); glTexCoord2f(0,0);glVertex2f(-fw/2,fh/2);
 			glTexCoord2f(1,0);glVertex2f(fw/2,fh/2);   glTexCoord2f(1,1);glVertex2f(fw/2,-fh/2);
@@ -1469,17 +1499,76 @@ void open_shop()
 	ggprint16(&rGold,0,0x00000000,"Gold: %d",playerGold);
 	glDisable(GL_BLEND);
 
-	float scale=4, w=img[12].width*scale, h=img[12].height*scale;
-	float cx=g.xres/2.0f, cy=g.yres-265.0f;
-	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glColor4f(1,1,1,1); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBindTexture(GL_TEXTURE_2D, g.brownTex);
-	glPushMatrix(); glTranslatef(cx,cy,0);
-	glBegin(GL_QUADS);
-		glTexCoord2f(0,1);glVertex2f(-w/4,-h/4); glTexCoord2f(0,0);glVertex2f(-w/4,h/4);
-		glTexCoord2f(1,0);glVertex2f(w/4,h/4);   glTexCoord2f(1,1);glVertex2f(w/4,-h/4);
-	glEnd();
-	glDisable(GL_BLEND); glPopMatrix();
+	// ── Brown cow NPC ─────────────────────────────────────────────
+	float scale = 4.0f;
+    float w = img[12].width  * scale;
+    float h = img[12].height * scale;
+    float cx = g.xres / 2.0f;
+    float cy = g.yres - 265.0f;
+    
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, g.brownTex);
+    glPushMatrix();
+    glTranslatef(cx, cy, 0.0f);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/4, -h/4);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/4, h/4);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(w/4, h/4);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(w/4, -h/4);
+    glEnd();
+    glDisable(GL_BLEND);
+    glPopMatrix();
+
+	// ── Customer speech bubble ────────────────────────────────────
+    glDisable(GL_TEXTURE_2D);
+    glColor3ub(255, 127, 80);
+
+    float boxW = 350.0f;
+    float boxH = 40.0f;
+    float boxX = cx - boxW / 2.0f;
+    float boxY = cy - h / 4.0f - 20.0f;
+
+    glBegin(GL_QUADS);
+        glVertex2f(boxX,         boxY);
+        glVertex2f(boxX,         boxY + boxH);
+        glVertex2f(boxX + boxW,  boxY + boxH);
+        glVertex2f(boxX + boxW,  boxY);
+    glEnd();
+
+    glColor3ub(0, 0, 0);
+    glBegin(GL_LINE_LOOP);
+        glVertex2f(boxX,         boxY);
+        glVertex2f(boxX,         boxY + boxH);
+        glVertex2f(boxX + boxW,  boxY + boxH);
+        glVertex2f(boxX + boxW,  boxY);
+    glEnd();
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    Rect r;
+    r.center = 1;
+    r.left = (int)cx;
+    r.bot = (int)(boxY + 12);
+
+    if (requestedFish >= 0 && requestedFish < NUM_FISH) {
+        ggprint16(&r, 0, 0x00000000,
+                  "Howdy! Can I get a %s?",
+                  FISH_NAMES[requestedFish]);
+    }
+    glDisable(GL_BLEND);
+
+	// ── Inventory panel ───────────────────────────────────────────
+	// Shows each fish type, your stock count, and price
+	float panW  = 300.0f;
+	float panH  = 180.0f;
+	float panX  = 490.0f;
+	float panY  = g.yres - 270.0f;
+	float rowH  = panH / NUM_FISH;
 
 	glDisable(GL_TEXTURE_2D);
 	glColor3ub(255,127,80);
@@ -1516,12 +1605,21 @@ void open_shop()
 	glDisable(GL_BLEND);
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect rHeader; rHeader.center=0; rHeader.left=(int)(panX+8); rHeader.bot=(int)(panY+panH-4);
-	ggprint16(&rHeader,0,0x00ffe94f,"Your Inventory");
-	for (int i=0;i<NUM_FISH;i++){
-		float rowY=panY+panH-26-(i+1)*rowH*0.78f;
-		bool wanted=(i==requestedFish);
-		if (wanted){
+
+	// Header
+	Rect rHeader;
+	rHeader.center = 0;
+	rHeader.left   = (int)(panX + 8);
+	rHeader.bot    = (int)(panY + panH - 4);
+	ggprint16(&rHeader, 0, 0x00000000, "Your Inventory");
+
+	// One row per fish
+	for (int i = 0; i < NUM_FISH; i++) {
+		float rowY = panY + panH - 26 - (i + 1) * rowH * 0.78f;
+
+		// Highlight the row if this is what the customer wants
+		bool wanted = (i == requestedFish);
+		if (wanted) {
 			glDisable(GL_TEXTURE_2D);
 			glColor4f(0.2f,0.55f,0.2f,0.4f);
 			glBegin(GL_QUADS);
@@ -1563,13 +1661,26 @@ void open_shop()
 	glDisable(GL_BLEND);
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect rSell; rSell.center=1; rSell.left=(int)(sellX+btnW/2); rSell.bot=(int)(btnY+10);
-	ggprint16(&rSell,0,0x00ffffff,"[Y] Sell");
-	Rect rDec; rDec.center=1; rDec.left=(int)(decX+btnW/2); rDec.bot=(int)(btnY+10);
-	ggprint16(&rDec,0,0x00ffffff,"[N] Decline");
-	if (!canSell&&requestedFish>=0){
-		Rect rWarn; rWarn.center=0; rWarn.left=(int)sellX; rWarn.bot=(int)(btnY-18);
-		ggprint16(&rWarn,0,0x00ff5555,"You don't have that fish!");
+
+	Rect rSell;
+	rSell.center = 1;
+	rSell.left   = (int)(sellX + btnW / 2.0f);
+	rSell.bot    = (int)(btnY + 10);
+	ggprint16(&rSell, 0, 0x00ffffff, "[Y] Sell");
+
+	Rect rDec;
+	rDec.center = 1;
+	rDec.left   = (int)(decX + btnW / 2.0f);
+	rDec.bot    = (int)(btnY + 10);
+	ggprint16(&rDec, 0, 0x00ffffff, "[N] Decline");
+
+	// "Out of stock" warning under the sell button if player can't sell
+	if (!canSell && requestedFish >= 0) {
+		Rect rWarn;
+		rWarn.center = 0;
+		rWarn.left   = (int)sellX + 30;
+		rWarn.bot    = (int)(btnY - 18);
+		ggprint16(&rWarn, 0, 0x00ff5555, "You don't have that fish!");
 	}
 	glDisable(GL_BLEND);
 }
