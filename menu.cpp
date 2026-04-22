@@ -680,12 +680,12 @@ int check_keys(XEvent *e)
 			return 1;
 		}
 		// remove after testing
-		// if (key == XK_g || key == XK_G) {
-		// 	for (int i = 0; i < NUM_FISH; i++)
-		// 		fishInventory[i]++;
-		// 	printf("[TEST] Added 1 of each fish to inventory\n");
-		// 	fflush(stdout);
-		// }
+		 if (key == XK_g || key == XK_G) {
+		 	for (int i = 0; i < NUM_FISH; i++)
+		 		fishInventory[i]++;
+		 	printf("[TEST] Added 1 of each fish to inventory\n");
+		 	fflush(stdout);
+		 }
 		//open shop 
 		if ((key == XK_s || key == XK_S) && gameState == PLAY) {
 			gameState = SHOPPING;
@@ -1089,14 +1089,15 @@ void open_shop(){
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
-	float fishScale = 0.100f;
+	float fishScale = 0.700f;
 
 	// Top shelf — first 2 fish
 	float topShelfY  = 95.0f;
-	float topStartX  = 3790.0f;
+	float topStartX  = 390.0f;
 	float topSpacing = 90.0f;
 
 	for (int i = 0; i < 2; i++) {
+		if (fishInventory[i] <= 0) continue; 
 		float fw = FISH_W[i] * fishScale;
 		float fh = FISH_H[i] * fishScale;
 		float fx = topStartX + i * topSpacing;
@@ -1119,6 +1120,7 @@ void open_shop(){
 	float botSpacing = 90.0f;
 
 	for (int i = 2; i < NUM_FISH; i++) {
+		if (fishInventory[i] <= 0) continue; 
 		float fw = FISH_W[i] * fishScale;
 		float fh = FISH_H[i] * fishScale;
 		float fx = botStartX + (i - 2) * botSpacing;
@@ -1215,8 +1217,8 @@ void open_shop(){
 	// Shows each fish type, your stock count, and price
 	float panW  = 300.0f;
 	float panH  = 180.0f;
-	float panX  = 10.0f;
-	float panY  = (g.yres - panH) / 2.0f;
+	float panX  = 490.0f;
+	float panY  = g.yres - 270.0f;
 	float rowH  = panH / NUM_FISH;
 
 	glDisable(GL_TEXTURE_2D);
@@ -1250,7 +1252,7 @@ void open_shop(){
 	rHeader.center = 0;
 	rHeader.left   = (int)(panX + 8);
 	rHeader.bot    = (int)(panY + panH - 4);
-	ggprint16(&rHeader, 0, 0x00ffe94f, "Your Inventory");
+	ggprint16(&rHeader, 0, 0x00000000, "Your Inventory");
 
 	// One row per fish
 	for (int i = 0; i < NUM_FISH; i++) {
@@ -1352,7 +1354,7 @@ void open_shop(){
 	if (!canSell && requestedFish >= 0) {
 		Rect rWarn;
 		rWarn.center = 0;
-		rWarn.left   = (int)sellX;
+		rWarn.left   = (int)sellX + 30;
 		rWarn.bot    = (int)(btnY - 18);
 		ggprint16(&rWarn, 0, 0x00ff5555, "You don't have that fish!");
 	}
