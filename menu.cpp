@@ -40,7 +40,7 @@ GameState gameState = MENU;
 // ============================================================
 // IMAGES
 // ============================================================
-Image img[13] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png",
+Image img[16] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png",
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png",
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png",
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
@@ -867,15 +867,10 @@ int check_keys(XEvent *e)
 				}
 				return 0;
 			}
-			if (gameState == SHOPPING) {
-				gameState = PLAY;
-				return 0;
-			}
 			if (gameState == CHARACTER) {
 				gameState = MENU;
 				return 0;
 			}
-
 			if (gameState == PLAY) {
 				gameState = MENU;
 				return 0;
@@ -895,7 +890,7 @@ int check_keys(XEvent *e)
 				fflush(stdout);
 				gameState = MENU;
 			}
-			return 0; // nothing else fires in CHARACTER state
+			return 0;
 		}
 
 		// remove after testing
@@ -913,42 +908,12 @@ int check_keys(XEvent *e)
 			requestedFish = fishDist(gen);
 		}
 
-		// back to fishing button from shop
-		if (gameState == SHOPPING) {
-			if (key == XK_b || key == XK_B) {
-				gameState = PLAY;
-			}
-		}
-
-		// TEST KEY: press F anywhere to jump to FISHING
-		}
-
+		// open pachinko
 		if ((key == XK_p || key == XK_P) && gameState == PLAY) {
 			enter_pachinko();
 		}
 
-		if (gameState == SHOPPING) {
-			if (key == XK_b || key == XK_B) gameState = PLAY;
-			if (key == XK_y || key == XK_Y || key == XK_Return) {
-				if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
-					fishInventory[requestedFish]--;
-					playerGold += FISH_PRICES[requestedFish];
-					uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
-					requestedFish = fishDist(gen);
-					printf("[SHOP] Sold! Gold: %d. Next: %s\n", playerGold, FISH_NAMES[requestedFish]);
-				} else {
-					printf("[SHOP] Can't sell — don't have that fish.\n");
-				}
-				fflush(stdout);
-			}
-			if (key == XK_n || key == XK_N) {
-				uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
-				requestedFish = fishDist(gen);
-				printf("[SHOP] Declined. Next: %s\n", FISH_NAMES[requestedFish]);
-				fflush(stdout);
-			}
-		}
-
+		// TEST KEY: press F anywhere to jump to FISHING
 		if (key == XK_f || key == XK_F) {
 			reset_fishing_state();
 			gameState    = FISHING;
@@ -957,9 +922,9 @@ int check_keys(XEvent *e)
 			uniform_real_distribution<float> biteDist(2.0f, 6.0f);
 			biteDelay = biteDist(gen);
 			biteTimer = biteDelay;
-			printf("[TEST] Entered FISHING, waiting %.1f s\n", biteDelay); fflush(stdout);
+			printf("[TEST] Entered FISHING, waiting %.1f s\n", biteDelay);
+			fflush(stdout);
 		}
-
 
 		// SPACE: skill check input in FISHING
 		if (key == XK_space) {
@@ -986,11 +951,15 @@ int check_keys(XEvent *e)
 				menuSelected = (menuSelected + 1 + menuCount) % menuCount;
 			if (key == XK_Return)
 				select_menu_option(menuSelected);
-			return 0; // nothing else fires in MENU state
+			return 0;
 		}
 
 		// SHOPPING block
 		if (gameState == SHOPPING) {
+			if (key == XK_b || key == XK_B) {
+				gameState = PLAY;
+				return 0;
+			}
 			if (key == XK_y || key == XK_Y || key == XK_Return) {
 				if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
 					fishInventory[requestedFish]--;
@@ -1012,11 +981,6 @@ int check_keys(XEvent *e)
 					FISH_NAMES[requestedFish]);
 				fflush(stdout);
 			}
-
-		if (gameState == MENU) {
-			if (key == XK_Up   || key == XK_w) menuSelected = (menuSelected - 1 + menuCount) % menuCount;
-			if (key == XK_Down || key == XK_s) menuSelected = (menuSelected + 1 + menuCount) % menuCount;
-			if (key == XK_Return) select_menu_option(menuSelected);
 		}
 	}
 	return 0;
@@ -1035,7 +999,7 @@ void physics()
 
 	if (gameState == PLAY || gameState == FISHING) {
     boatBobTime += boatBobSpeed;
-}
+	}
 
 	if (gameState == PLAY) {
 		for (int s = 0; s < 2; s++) {
@@ -1053,6 +1017,8 @@ void physics()
 				float nextHalfW = FISH_W[next] / 2.0f;
 				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
 			}
+		}
+	
 		boatBobTime += boatBobSpeed;
 		for (int s = 0; s < 2; s++) {
 			if ((fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
@@ -1064,6 +1030,7 @@ void physics()
 			slotX[s]   += (s == 0) ? FISH_SPEED[slotFish[s]] : -FISH_SPEED[slotFish[s]];
 		}
 	}
+
 
 	if (gameState == FISHING) {
 		static struct timeval lastTime = {0, 0};
@@ -1293,25 +1260,20 @@ void select_menu_option(int i)
 {
 	switch (i) {
 		case 0:
-			glColor3ub(0, 0, 0);
 			printf("Start Game selected\n");
 			gameState = PLAY;
 
 			break;
 		case 1:
-			glColor3ub(0, 0, 0);
 			printf("Character selected\n");
 			gameState = CHARACTER;
 			charSelectCursor = selectedCharacter;
 			return;
 		case 2:
-			glColor3ub(0, 0, 0);
 			printf("Quit selected\n");
 			exit(0);
 			break;
-		case 0: printf("Start Game\n");    gameState = PLAY;      break;
-		case 1: printf("Character\n");     gameState = CHARACTER;  break;
-		case 2: printf("Quit\n");          exit(0);                break;
+	
 	}
 }
 
@@ -1369,26 +1331,6 @@ void render_senor_pescado()
 	glDisable(GL_BLEND);
 }
 
-void render_boat()
-{
-	float scale = 4.0f;
-	float w = (gameState == FISHING) ? img[10].width  * scale : img[4].width  * scale;
-	float h = (gameState == FISHING) ? img[10].height * scale : img[4].height * scale;
-	float cx = g.xres / 2.0f, cy = (g.yres / 2.0f) - 80.0f;
-	float bob = sinf(boatBobTime) * boatBobAmp;
-	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glColor4f(1,1,1,1); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	GLuint activeBoatTex = (gameState == FISHING) ? g.dipDipTex : g.boatTex;
-	glBindTexture(GL_TEXTURE_2D, activeBoatTex);
-	glPushMatrix(); glTranslatef(cx, cy + bob, 0.0f);
-	glBegin(GL_QUADS);
-		glTexCoord2f(0,1); glVertex2f(-w/2,-h/2);
-		glTexCoord2f(0,0); glVertex2f(-w/2, h/2);
-		glTexCoord2f(1,0); glVertex2f( w/2, h/2);
-		glTexCoord2f(1,1); glVertex2f( w/2,-h/2);
-	glEnd();
-	glDisable(GL_BLEND); glPopMatrix();
-}
 
 void render_fish_slot(int s)
 {
@@ -1808,11 +1750,8 @@ GLuint get_character_tex(int charIndex) {
 
 void render_boat() {
     float scale = 4.0f;
-
     // Character img indices: 0=gordoni(4), 1=win(13), 2=kian(14), 3=simon(15)
     int charImgIndex[NUM_CHARACTERS] = { 4, 13, 14, 15 };
-
-    // Pick the right image based on fishing state and selected character
     int activeIndex = (gameState == FISHING) ? 10 : charImgIndex[selectedCharacter];
 
     float w = img[activeIndex].width  * scale;
@@ -2116,16 +2055,8 @@ void render_slot_overlay()
 
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    for (int i = 0; i < menuCount; i++) {
-        unsigned int color = (menuSelected == i) ? 0x00d0ea0d : 0x00000000;
-        if (i == menuSelected)
-            ggprint16(&r, lineStep, color, "> %s <", menuSelect[i]);
-        else
-            ggprint16(&r, lineStep, color, "  %s", menuSelect[i]);
-    }
 	glDisable(GL_BLEND);
 
-}
 	Rect rTitle; rTitle.center=1; rTitle.left=(int)(panX+panW*0.5f); rTitle.bot=(int)(panY+panH-22);
 	ggprint16(&rTitle,0,0x00ffe94f,"~ FISH SLOT MACHINE ~");
 
@@ -2359,26 +2290,11 @@ void render()
         glVertex2i(g.xres, 0);
 	glEnd();
 
-    //render_box();
+    render_box();
 	render_menu();
     render_logo();
 	render_senor_pescado();
     //ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
-	
-
-		glClear(GL_COLOR_BUFFER_BIT);
-		glColor3f(1,1,1);
-		glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
-		glBegin(GL_QUADS);
-			glTexCoord2f(g.tex.xc[0],g.tex.yc[1]); glVertex2i(0,      0);
-			glTexCoord2f(g.tex.xc[0],g.tex.yc[0]); glVertex2i(0,      g.yres);
-			glTexCoord2f(g.tex.xc[1],g.tex.yc[0]); glVertex2i(g.xres, g.yres);
-			glTexCoord2f(g.tex.xc[1],g.tex.yc[1]); glVertex2i(g.xres, 0);
-		glEnd();
-		render_box();
-		render_menu();
-		render_logo();
-		render_senor_pescado();
 	}
 	else if (gameState == PLAY) {
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -2436,7 +2352,6 @@ void render()
     	render_character_select();
 	}
 
-}
 	else if (gameState == PACHINKO) {
 		render_pachinko();
 	}
