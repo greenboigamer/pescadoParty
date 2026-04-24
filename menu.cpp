@@ -45,7 +45,14 @@ Image img[13] = {"./assets/images/fish.jpg", "./assets/images/background_fishing
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png",
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
     "./assets/images/grieselly_fish.png", "./assets/images/dip_dip.png",
-    "./assets/images/shop.png", "./assets/images/brown_cow_in_a_suit.png"};
+    "./assets/images/shop.png", "./assets/images/brown_cow_in_a_suit.png",
+    "./assets/images/win.png", "./assets/images/kian.png", "./assets/images/simon.png"};
+
+//character selection
+const int NUM_CHARACTERS = 4;
+const char* CHAR_NAMES[NUM_CHARACTERS] = { "Gordoni", "Win", "Kian", "Simon" };
+int selectedCharacter = 0;  // which character is active
+int charSelectCursor  = 0;
 
 // ============================================================
 // FISHING / BOAT GLOBALS
@@ -237,15 +244,28 @@ public:
 	GLuint griesellyTex;
 	GLuint shopTex;
 	GLuint brownTex;
+	GLuint winTex;
+    GLuint kianTex;
+    GLuint simonTex;
 	float logoAngle;
 	Global() {
-		xres = 640; yres = 480;
-		fishingTex = 0; pescadoTex = 0;
-		logoAngle  = 0.0f;
-		partyTex = 0; boatTex = 0; dipDipTex = 0;
-		fishOneTex = 0; reynbohTex = 0; deathSnapperTex = 0;
-		exoTroutTex = 0; griesellyTex = 0;
-		shopTex = 0; brownTex = 0;
+		xres=640, yres=480;
+		fishingTex = 0;
+		pescadoTex = 0;
+		logoAngle = 0.0f;
+		partyTex = 0;
+		boatTex = 0;
+		dipDipTex = 0;
+		fishOneTex = 0;
+		reynbohTex = 0;
+		deathSnapperTex = 0;
+		exoTroutTex = 0;
+		griesellyTex = 0;
+		shopTex = 0;
+		brownTex = 0;
+		winTex   = 0;
+    kianTex  = 0;
+    simonTex = 0;
 	}
 } g;
 
@@ -569,6 +589,40 @@ void init_opengl(void)
 		GL_RGBA, GL_UNSIGNED_BYTE, alphaDataBrown);
 	free(alphaDataBrown);
 
+	// win
+	unsigned char *alphaDataWin = buildAlphaData(&img[13]);
+	glGenTextures(1, &g.winTex);
+	glBindTexture(GL_TEXTURE_2D, g.winTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[13].width, img[13].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataWin);
+	free(alphaDataWin);
+
+	// kian
+	unsigned char *alphaDataKian = buildAlphaData(&img[14]);
+	glGenTextures(1, &g.kianTex);
+	glBindTexture(GL_TEXTURE_2D, g.kianTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[14].width, img[14].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataKian);
+	free(alphaDataKian);
+
+	// simon
+	unsigned char *alphaDataSimon = buildAlphaData(&img[15]);
+	glGenTextures(1, &g.simonTex);
+	glBindTexture(GL_TEXTURE_2D, g.simonTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[15].width, img[15].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataSimon);
+	free(alphaDataSimon);
+
+
 	initialize_fonts();
 
 	slotFish[0] = 0; slotFish[1] = 1;
@@ -799,6 +853,7 @@ int check_keys(XEvent *e)
 	if (e->type == KeyPress) {
 		int key = XLookupKeysym(&e->xkey, 0);
 
+		// ESC
 		if (key == XK_Escape) {
 			if (gameState == FISHING) {
 				gameState = PLAY; skillCheckActive = false; return 0;
@@ -812,9 +867,38 @@ int check_keys(XEvent *e)
 				}
 				return 0;
 			}
+			if (gameState == SHOPPING) {
+				gameState = PLAY;
+				return 0;
+			}
+			if (gameState == CHARACTER) {
+				gameState = MENU;
+				return 0;
+			}
+
+			if (gameState == PLAY) {
+				gameState = MENU;
+				return 0;
+			}
 			return 1;
 		}
 
+		// CHARACTER block — must be before MENU block
+		if (gameState == CHARACTER) {
+			if (key == XK_Left || key == XK_a)
+				charSelectCursor = (charSelectCursor - 1 + NUM_CHARACTERS) % NUM_CHARACTERS;
+			if (key == XK_Right || key == XK_d)
+				charSelectCursor = (charSelectCursor + 1) % NUM_CHARACTERS;
+			if (key == XK_Return) {
+				selectedCharacter = charSelectCursor;
+				printf("[CHAR] Selected: %s\n", CHAR_NAMES[selectedCharacter]);
+				fflush(stdout);
+				gameState = MENU;
+			}
+			return 0; // nothing else fires in CHARACTER state
+		}
+
+		// remove after testing
 		if (key == XK_g || key == XK_G) {
 			for (int i = 0; i < NUM_FISH; i++)
 				fishInventory[i]++;
@@ -822,10 +906,21 @@ int check_keys(XEvent *e)
 			fflush(stdout);
 		}
 
+		// open shop
 		if ((key == XK_s || key == XK_S) && gameState == PLAY) {
 			gameState = SHOPPING;
 			uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
 			requestedFish = fishDist(gen);
+		}
+
+		// back to fishing button from shop
+		if (gameState == SHOPPING) {
+			if (key == XK_b || key == XK_B) {
+				gameState = PLAY;
+			}
+		}
+
+		// TEST KEY: press F anywhere to jump to FISHING
 		}
 
 		if ((key == XK_p || key == XK_P) && gameState == PLAY) {
@@ -865,6 +960,8 @@ int check_keys(XEvent *e)
 			printf("[TEST] Entered FISHING, waiting %.1f s\n", biteDelay); fflush(stdout);
 		}
 
+
+		// SPACE: skill check input in FISHING
 		if (key == XK_space) {
 			if (gameState == FISHING && skillCheckActive) {
 				skillCheckActive = false;
@@ -880,6 +977,41 @@ int check_keys(XEvent *e)
 				select_menu_option(menuSelected);
 			}
 		}
+
+		// MENU block
+		if (gameState == MENU) {
+			if (key == XK_Up || key == XK_w)
+				menuSelected = (menuSelected - 1 + menuCount) % menuCount;
+			if (key == XK_Down || key == XK_s)
+				menuSelected = (menuSelected + 1 + menuCount) % menuCount;
+			if (key == XK_Return)
+				select_menu_option(menuSelected);
+			return 0; // nothing else fires in MENU state
+		}
+
+		// SHOPPING block
+		if (gameState == SHOPPING) {
+			if (key == XK_y || key == XK_Y || key == XK_Return) {
+				if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
+					fishInventory[requestedFish]--;
+					playerGold += FISH_PRICES[requestedFish];
+					uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
+					requestedFish = fishDist(gen);
+					printf("[SHOP] Sold! Gold: %d. Next customer wants: %s\n",
+						playerGold, FISH_NAMES[requestedFish]);
+					fflush(stdout);
+				} else {
+					printf("[SHOP] Can't sell — don't have that fish.\n");
+					fflush(stdout);
+				}
+			}
+			if (key == XK_n || key == XK_N) {
+				uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
+				requestedFish = fishDist(gen);
+				printf("[SHOP] Declined. Next customer wants: %s\n",
+					FISH_NAMES[requestedFish]);
+				fflush(stdout);
+			}
 
 		if (gameState == MENU) {
 			if (key == XK_Up   || key == XK_w) menuSelected = (menuSelected - 1 + menuCount) % menuCount;
@@ -902,6 +1034,25 @@ void physics()
 	}
 
 	if (gameState == PLAY || gameState == FISHING) {
+    boatBobTime += boatBobSpeed;
+}
+
+	if (gameState == PLAY) {
+		for (int s = 0; s < 2; s++) {
+			int fi = slotFish[s];
+			slotBob[s] += FISH_BOB_SPEED[fi];
+			slotX[s]   += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
+
+			float halfW = FISH_W[fi] / 2.0f;
+			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres)
+								: (slotX[s] + halfW < 0);
+			if (exited) {
+				int next = (fi + 2) % NUM_FISH;
+				slotFish[s] = next;
+				slotBob[s]  = 0.0f;
+				float nextHalfW = FISH_W[next] / 2.0f;
+				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
+			}
 		boatBobTime += boatBobSpeed;
 		for (int s = 0; s < 2; s++) {
 			if ((fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
@@ -1141,6 +1292,23 @@ void render_box()
 void select_menu_option(int i)
 {
 	switch (i) {
+		case 0:
+			glColor3ub(0, 0, 0);
+			printf("Start Game selected\n");
+			gameState = PLAY;
+
+			break;
+		case 1:
+			glColor3ub(0, 0, 0);
+			printf("Character selected\n");
+			gameState = CHARACTER;
+			charSelectCursor = selectedCharacter;
+			return;
+		case 2:
+			glColor3ub(0, 0, 0);
+			printf("Quit selected\n");
+			exit(0);
+			break;
 		case 0: printf("Start Game\n");    gameState = PLAY;      break;
 		case 1: printf("Character\n");     gameState = CHARACTER;  break;
 		case 2: printf("Quit\n");          exit(0);                break;
@@ -1627,6 +1795,176 @@ void open_shop()
 	glDisable(GL_BLEND);
 }
 
+GLuint get_character_tex(int charIndex) {
+    switch (charIndex) {
+        case 0: return g.boatTex;   // Gordoni
+        case 1: return g.winTex;    // Win
+        case 2: return g.kianTex;   // Kian
+        case 3: return g.simonTex;  // Simon
+        default: return g.boatTex;
+    }
+}
+
+
+void render_boat() {
+    float scale = 4.0f;
+
+    // Character img indices: 0=gordoni(4), 1=win(13), 2=kian(14), 3=simon(15)
+    int charImgIndex[NUM_CHARACTERS] = { 4, 13, 14, 15 };
+
+    // Pick the right image based on fishing state and selected character
+    int activeIndex = (gameState == FISHING) ? 10 : charImgIndex[selectedCharacter];
+
+    float w = img[activeIndex].width  * scale;
+    float h = img[activeIndex].height * scale;
+    float cx = g.xres / 2.0f;
+    float cy = (g.yres / 2.0f) - 80.0f;
+    float bob = sinf(boatBobTime) * boatBobAmp;
+
+    GLuint activeTex = (gameState == FISHING) ? g.dipDipTex : get_character_tex(selectedCharacter);
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, activeTex);
+    glPushMatrix();
+    glTranslatef(cx, cy + bob, 0.0f);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2, -h/2);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2,  h/2);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f( w/2,  h/2);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f( w/2, -h/2);
+    glEnd();
+    glDisable(GL_BLEND);
+    glPopMatrix();
+}
+
+
+void render_character_select()
+{
+    // Draw the fishing background behind the UI
+    glClear(GL_COLOR_BUFFER_BIT);
+    glColor3f(1.0, 1.0, 1.0);
+    glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(0, 0);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(0, g.yres);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(g.xres, g.yres);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
+    glEnd();
+
+    GLuint charTextures[NUM_CHARACTERS] = {
+        g.boatTex, g.winTex, g.kianTex, g.simonTex
+    };
+
+    // Title
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    Rect rTitle;
+    rTitle.center = 1;
+    rTitle.left   = g.xres / 2;
+    rTitle.bot    = g.yres - 50;
+    ggprint16(&rTitle, 0, 0x00ffffff, "-- SELECT YOUR CHARACTER --");
+    glDisable(GL_BLEND);
+
+    // Layout: space 4 characters evenly across the screen
+    float cardW   = 120.0f;
+    float cardH   = 140.0f;
+    float spacing = (float)g.xres / (NUM_CHARACTERS + 1);
+    float cardY   = (g.yres / 2.0f) - 20.0f;
+
+    for (int i = 0; i < NUM_CHARACTERS; i++) {
+        float cx = spacing * (i + 1);
+
+        // Highlight box around currently cursored character
+        glDisable(GL_TEXTURE_2D);
+        if (i == charSelectCursor) {
+            // Bright gold selection box
+            glLineWidth(3.0f);
+            glColor3ub(255, 220, 50);
+            glBegin(GL_LINE_LOOP);
+                glVertex2f(cx - cardW/2 - 6, cardY - cardH/2 - 6);
+                glVertex2f(cx - cardW/2 - 6, cardY + cardH/2 + 6);
+                glVertex2f(cx + cardW/2 + 6, cardY + cardH/2 + 6);
+                glVertex2f(cx + cardW/2 + 6, cardY - cardH/2 - 6);
+            glEnd();
+            // Subtle gold fill behind selected card
+            glColor4f(1.0f, 0.85f, 0.1f, 0.15f);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBegin(GL_QUADS);
+                glVertex2f(cx - cardW/2 - 6, cardY - cardH/2 - 6);
+                glVertex2f(cx - cardW/2 - 6, cardY + cardH/2 + 6);
+                glVertex2f(cx + cardW/2 + 6, cardY + cardH/2 + 6);
+                glVertex2f(cx + cardW/2 + 6, cardY - cardH/2 - 6);
+            glEnd();
+            glDisable(GL_BLEND);
+        }
+
+        // Green checkmark box around the actively selected character
+        if (i == selectedCharacter) {
+            glLineWidth(2.0f);
+            glColor3ub(50, 220, 100);
+            glBegin(GL_LINE_LOOP);
+                glVertex2f(cx - cardW/2 - 3, cardY - cardH/2 - 3);
+                glVertex2f(cx - cardW/2 - 3, cardY + cardH/2 + 3);
+                glVertex2f(cx + cardW/2 + 3, cardY + cardH/2 + 3);
+                glVertex2f(cx + cardW/2 + 3, cardY - cardH/2 - 3);
+            glEnd();
+        }
+
+        // Character sprite
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+        glBindTexture(GL_TEXTURE_2D, charTextures[i]);
+        glPushMatrix();
+        glTranslatef(cx, cardY, 0.0f);
+        glBegin(GL_QUADS);
+            glTexCoord2f(0.0f, 1.0f); glVertex2f(-cardW/2, -cardH/2);
+            glTexCoord2f(0.0f, 0.0f); glVertex2f(-cardW/2,  cardH/2);
+            glTexCoord2f(1.0f, 0.0f); glVertex2f( cardW/2,  cardH/2);
+            glTexCoord2f(1.0f, 1.0f); glVertex2f( cardW/2, -cardH/2);
+        glEnd();
+        glPopMatrix();
+        glDisable(GL_BLEND);
+
+        // Character name below sprite
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        Rect rName;
+        rName.center = 1;
+        rName.left   = (int)cx;
+        rName.bot    = (int)(cardY - cardH/2 - 40);
+        unsigned int nameCol = (i == charSelectCursor) ? 0x00ffe94f : 0x00ffffff;
+        ggprint16(&rName, 0, nameCol, CHAR_NAMES[i]);
+
+        // "ACTIVE" tag under the selected character's name
+        if (i == selectedCharacter) {
+            Rect rActive;
+            rActive.center = 1;
+            rActive.left   = (int)cx;
+            rActive.bot    = (int)(cardY - cardH/2 - 60);
+            ggprint16(&rActive, 0, 0x0044ff88, "[ ACTIVE ]");
+        }
+        glDisable(GL_BLEND);
+    }
+
+    // Instructions at the bottom
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    Rect rHint;
+    rHint.center = 1;
+    rHint.left   = g.xres / 2;
+    rHint.bot    = 20;
+    ggprint16(&rHint, 0, 0x00aaddff, "LEFT / RIGHT to browse   ENTER to select   ESC to go back");
+    glDisable(GL_BLEND);
+}
 // ============================================================
 // SLOT MACHINE OVERLAY RENDER
 // ============================================================
@@ -1778,6 +2116,16 @@ void render_slot_overlay()
 
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    for (int i = 0; i < menuCount; i++) {
+        unsigned int color = (menuSelected == i) ? 0x00d0ea0d : 0x00000000;
+        if (i == menuSelected)
+            ggprint16(&r, lineStep, color, "> %s <", menuSelect[i]);
+        else
+            ggprint16(&r, lineStep, color, "  %s", menuSelect[i]);
+    }
+	glDisable(GL_BLEND);
+
+}
 	Rect rTitle; rTitle.center=1; rTitle.left=(int)(panX+panW*0.5f); rTitle.bot=(int)(panY+panH-22);
 	ggprint16(&rTitle,0,0x00ffe94f,"~ FISH SLOT MACHINE ~");
 
@@ -1997,6 +2345,27 @@ void render_pachinko()
 void render()
 {
 	if (gameState == MENU) {
+	glClear(GL_COLOR_BUFFER_BIT);
+	glColor3f(1.0, 1.0, 1.0);
+	glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
+	glBegin(GL_QUADS);
+		glTexCoord2f(g.tex.xc[0], g.tex.yc[1]);
+        glVertex2i(0,      0);
+		glTexCoord2f(g.tex.xc[0], g.tex.yc[0]);
+        glVertex2i(0,      g.yres);
+		glTexCoord2f(g.tex.xc[1], g.tex.yc[0]);
+        glVertex2i(g.xres, g.yres);
+		glTexCoord2f(g.tex.xc[1], g.tex.yc[1]);
+        glVertex2i(g.xres, 0);
+	glEnd();
+
+    //render_box();
+	render_menu();
+    render_logo();
+	render_senor_pescado();
+    //ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+	
+
 		glClear(GL_COLOR_BUFFER_BIT);
 		glColor3f(1,1,1);
 		glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
@@ -2063,6 +2432,11 @@ void render()
 		open_shop();
 		render_shop_back_button();
 	}
+	else if (gameState == CHARACTER) {
+    	render_character_select();
+	}
+
+}
 	else if (gameState == PACHINKO) {
 		render_pachinko();
 	}
