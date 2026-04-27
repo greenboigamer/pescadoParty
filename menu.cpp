@@ -51,7 +51,7 @@ Image img[16] = {"./assets/images/fish.jpg", "./assets/images/background_fishing
 //character selection
 const int NUM_CHARACTERS = 4;
 const char* CHAR_NAMES[NUM_CHARACTERS] = { "Gordoni", "Win", "Kian", "Simon" };
-int selectedCharacter = 0;  // which character is active
+int selectedCharacter = 0;
 int charSelectCursor  = 0;
 
 // ============================================================
@@ -83,6 +83,7 @@ int shopSelected = 0;
 int   slotFish[2] = { 0, 1 };
 float slotX[2]    = { 0.0f, 0.0f };
 float slotBob[2]  = { 0.0f, 0.5f };
+bool  slotRemoved[2] = { false, false };
 
 enum FishingPhase { PHASE_NONE, PHASE_WAITING, PHASE_MINIGAME, PHASE_HOOKED };
 FishingPhase fishingPhase = PHASE_NONE;
@@ -164,7 +165,7 @@ static bool  pach_show_result   = false;
 static float pach_result_timer  = 0.0f;
 static int   pach_last_payout   = 0;
 
-// ── Slot machine state ──────────────────────────────────────
+// Slot machine state
 static bool  slot_active       = false;
 static bool  slot_spinning     = false;
 static float slot_spin_timer   = 0.0f;
@@ -245,8 +246,8 @@ public:
 	GLuint shopTex;
 	GLuint brownTex;
 	GLuint winTex;
-    GLuint kianTex;
-    GLuint simonTex;
+	GLuint kianTex;
+	GLuint simonTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -264,8 +265,8 @@ public:
 		shopTex = 0;
 		brownTex = 0;
 		winTex   = 0;
-    kianTex  = 0;
-    simonTex = 0;
+		kianTex  = 0;
+		simonTex = 0;
 	}
 } g;
 
@@ -335,18 +336,165 @@ void check_mouse(XEvent *e);
 int  check_keys(XEvent *e);
 void physics(void);
 void render(void);
-// fishing
 void start_skill_check();
 void on_skill_result(SkillResult r);
 void open_shop();
-// pachinko
 void enter_pachinko();
-void pachinko_physics();
 void render_pachinko();
-// slot
 void slot_start();
 void slot_spin_finish();
 void render_slot_overlay();
+
+// ============================================================
+// GUI DRAW HELPERS
+// ============================================================
+
+// ── Internal helper: save/restore texture state around geometry draws ──
+// All draw_* helpers disable GL_TEXTURE_2D to draw geometry, then restore
+// it afterward so ggprint16 calls that follow never get blocky text.
+
+static void draw_rounded_rect_filled(float x, float y, float w, float h, float r,
+                                     float cr, float cg, float cb, float ca)
+{
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(cr, cg, cb, ca);
+	const int segs = 8;
+	float cx[4] = { x+r, x+w-r, x+w-r, x+r };
+	float cy_[4] = { y+r, y+r,   y+h-r, y+h-r };
+	float startA[4] = { (float)M_PI, 1.5f*(float)M_PI, 0.0f, 0.5f*(float)M_PI };
+	glBegin(GL_TRIANGLE_FAN);
+	glVertex2f(x+w/2, y+h/2);
+	for (int c = 0; c < 4; c++)
+		for (int i = 0; i <= segs; i++) {
+			float a = startA[c] + (float)i / segs * (float)M_PI * 0.5f;
+			glVertex2f(cx[c] + cosf(a)*r, cy_[c] + sinf(a)*r);
+		}
+	float a0 = startA[0];
+	glVertex2f(cx[0] + cosf(a0)*r, cy_[0] + sinf(a0)*r);
+	glEnd();
+	glEnable(GL_TEXTURE_2D); // restore so ggprint16 works after this call
+}
+
+static void draw_rounded_rect_outline(float x, float y, float w, float h, float r,
+                                      float lw, float cr, float cg, float cb, float ca)
+{
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glLineWidth(lw);
+	glColor4f(cr, cg, cb, ca);
+	const int segs = 12;
+	float cx[4] = { x+r, x+w-r, x+w-r, x+r };
+	float cy_[4] = { y+r, y+r,   y+h-r, y+h-r };
+	float startA[4] = { (float)M_PI, 1.5f*(float)M_PI, 0.0f, 0.5f*(float)M_PI };
+	glBegin(GL_LINE_LOOP);
+	for (int c = 0; c < 4; c++)
+		for (int i = 0; i <= segs; i++) {
+			float a = startA[c] + (float)i / segs * (float)M_PI * 0.5f;
+			glVertex2f(cx[c] + cosf(a)*r, cy_[c] + sinf(a)*r);
+		}
+	glEnd();
+	glEnable(GL_TEXTURE_2D); // restore
+}
+
+static void draw_hline(float x, float y, float w, float lw,
+                        float cr, float cg, float cb, float ca)
+{
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glLineWidth(lw);
+	glColor4f(cr, cg, cb, ca);
+	glBegin(GL_LINES);
+		glVertex2f(x, y); glVertex2f(x+w, y);
+	glEnd();
+	glEnable(GL_TEXTURE_2D); // restore
+}
+
+static void draw_diamond(float cx, float cy, float size,
+                          float cr, float cg, float cb, float ca)
+{
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(cr, cg, cb, ca);
+	glBegin(GL_QUADS);
+		glVertex2f(cx,      cy+size);
+		glVertex2f(cx+size, cy);
+		glVertex2f(cx,      cy-size);
+		glVertex2f(cx-size, cy);
+	glEnd();
+	glColor4f(cr*0.6f, cg*0.6f, cb*0.6f, ca);
+	glLineWidth(1.5f);
+	glBegin(GL_LINE_LOOP);
+		glVertex2f(cx,      cy+size);
+		glVertex2f(cx+size, cy);
+		glVertex2f(cx,      cy-size);
+		glVertex2f(cx-size, cy);
+	glEnd();
+	glEnable(GL_TEXTURE_2D); // restore
+}
+
+static void draw_corner_brackets(float x, float y, float w, float h,
+                                  float len, float lw,
+                                  float cr, float cg, float cb, float ca)
+{
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glLineWidth(lw);
+	glColor4f(cr, cg, cb, ca);
+	glBegin(GL_LINES);
+		glVertex2f(x,   y);     glVertex2f(x+len, y);
+		glVertex2f(x,   y);     glVertex2f(x,     y+len);
+		glVertex2f(x+w, y);     glVertex2f(x+w-len, y);
+		glVertex2f(x+w, y);     glVertex2f(x+w,   y+len);
+		glVertex2f(x,   y+h);   glVertex2f(x+len, y+h);
+		glVertex2f(x,   y+h);   glVertex2f(x,     y+h-len);
+		glVertex2f(x+w, y+h);   glVertex2f(x+w-len, y+h);
+		glVertex2f(x+w, y+h);   glVertex2f(x+w,   y+h-len);
+	glEnd();
+	glEnable(GL_TEXTURE_2D); // restore
+}
+
+static void draw_progress_bar(float x, float y, float w, float h,
+                               float progress,
+                               float br, float bg, float bb,
+                               float bgr, float bgg, float bgb)
+{
+	glDisable(GL_TEXTURE_2D);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	// background track
+	glColor4f(bgr, bgg, bgb, 0.85f);
+	glBegin(GL_QUADS);
+		glVertex2f(x,y); glVertex2f(x,y+h); glVertex2f(x+w,y+h); glVertex2f(x+w,y);
+	glEnd();
+	// fill
+	if (progress > 0.0f) {
+		float filled = w * progress;
+		glColor4f(br, bg, bb, 1.0f);
+		glBegin(GL_QUADS);
+			glVertex2f(x,y); glVertex2f(x,y+h);
+			glVertex2f(x+filled,y+h); glVertex2f(x+filled,y);
+		glEnd();
+		// highlight stripe
+		glColor4f(1.0f, 1.0f, 1.0f, 0.18f);
+		glBegin(GL_QUADS);
+			glVertex2f(x, y+h*0.65f); glVertex2f(x, y+h);
+			glVertex2f(x+filled, y+h); glVertex2f(x+filled, y+h*0.65f);
+		glEnd();
+	}
+	// border
+	glColor4f(0.7f, 0.85f, 1.0f, 0.6f);
+	glLineWidth(1.5f);
+	glBegin(GL_LINE_LOOP);
+		glVertex2f(x,y); glVertex2f(x,y+h); glVertex2f(x+w,y+h); glVertex2f(x+w,y);
+	glEnd();
+	glEnable(GL_TEXTURE_2D); // restore
+}
 
 // ============================================================
 // SLOT HELPERS
@@ -589,7 +737,6 @@ void init_opengl(void)
 		GL_RGBA, GL_UNSIGNED_BYTE, alphaDataBrown);
 	free(alphaDataBrown);
 
-	// win
 	unsigned char *alphaDataWin = buildAlphaData(&img[13]);
 	glGenTextures(1, &g.winTex);
 	glBindTexture(GL_TEXTURE_2D, g.winTex);
@@ -597,10 +744,9 @@ void init_opengl(void)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[13].width, img[13].height, 0,
-				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataWin);
+		GL_RGBA, GL_UNSIGNED_BYTE, alphaDataWin);
 	free(alphaDataWin);
 
-	// kian
 	unsigned char *alphaDataKian = buildAlphaData(&img[14]);
 	glGenTextures(1, &g.kianTex);
 	glBindTexture(GL_TEXTURE_2D, g.kianTex);
@@ -608,10 +754,9 @@ void init_opengl(void)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[14].width, img[14].height, 0,
-				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataKian);
+		GL_RGBA, GL_UNSIGNED_BYTE, alphaDataKian);
 	free(alphaDataKian);
 
-	// simon
 	unsigned char *alphaDataSimon = buildAlphaData(&img[15]);
 	glGenTextures(1, &g.simonTex);
 	glBindTexture(GL_TEXTURE_2D, g.simonTex);
@@ -619,9 +764,8 @@ void init_opengl(void)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[15].width, img[15].height, 0,
-				GL_RGBA, GL_UNSIGNED_BYTE, alphaDataSimon);
+		GL_RGBA, GL_UNSIGNED_BYTE, alphaDataSimon);
 	free(alphaDataSimon);
-
 
 	initialize_fonts();
 
@@ -648,6 +792,8 @@ void reset_fishing_state()
 	resultTimer      = 0.0f;
 	skillResult      = SC_NONE;
 	attemptCount     = 0;
+	slotRemoved[0]   = false;
+	slotRemoved[1]   = false;
 }
 
 float normalizeAngle(float a)
@@ -689,6 +835,16 @@ void on_skill_result(SkillResult r)
 		catchMsgTimer    = 2.0f;
 		if (hookedFishIndex >= 0 && hookedFishIndex < NUM_FISH)
 			fishInventory[hookedFishIndex]++;
+
+		// Teleport caught fish off-screen so physics re-enters it naturally
+		for (int s = 0; s < 2; s++) {
+			if (slotFish[s] == hookedFishIndex) {
+				slotRemoved[s] = true;
+				float halfW = FISH_W[slotFish[s]] / 2.0f;
+				slotX[s] = (s == 0) ? g.xres + halfW + 1.0f : -halfW - 1.0f;
+				break;
+			}
+		}
 		printf("[REEL] *** FISH HOOKED! ***\n"); fflush(stdout);
 	}
 }
@@ -853,7 +1009,6 @@ int check_keys(XEvent *e)
 	if (e->type == KeyPress) {
 		int key = XLookupKeysym(&e->xkey, 0);
 
-		// ESC
 		if (key == XK_Escape) {
 			if (gameState == FISHING) {
 				gameState = PLAY; skillCheckActive = false; return 0;
@@ -867,18 +1022,11 @@ int check_keys(XEvent *e)
 				}
 				return 0;
 			}
-			if (gameState == CHARACTER) {
-				gameState = MENU;
-				return 0;
-			}
-			if (gameState == PLAY) {
-				gameState = MENU;
-				return 0;
-			}
+			if (gameState == CHARACTER) { gameState = MENU; return 0; }
+			if (gameState == PLAY)      { gameState = MENU; return 0; }
 			return 1;
 		}
 
-		// CHARACTER block — must be before MENU block
 		if (gameState == CHARACTER) {
 			if (key == XK_Left || key == XK_a)
 				charSelectCursor = (charSelectCursor - 1 + NUM_CHARACTERS) % NUM_CHARACTERS;
@@ -893,27 +1041,20 @@ int check_keys(XEvent *e)
 			return 0;
 		}
 
-		// remove after testing
 		if (key == XK_g || key == XK_G) {
-			for (int i = 0; i < NUM_FISH; i++)
-				fishInventory[i]++;
-			printf("[TEST] Added 1 of each fish to inventory\n");
-			fflush(stdout);
+			for (int i = 0; i < NUM_FISH; i++) fishInventory[i]++;
+			printf("[TEST] Added 1 of each fish to inventory\n"); fflush(stdout);
 		}
 
-		// open shop
 		if ((key == XK_s || key == XK_S) && gameState == PLAY) {
 			gameState = SHOPPING;
 			uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
 			requestedFish = fishDist(gen);
 		}
 
-		// open pachinko
-		if ((key == XK_p || key == XK_P) && gameState == PLAY) {
+		if ((key == XK_p || key == XK_P) && gameState == PLAY)
 			enter_pachinko();
-		}
 
-		// TEST KEY: press F anywhere to jump to FISHING
 		if (key == XK_f || key == XK_F) {
 			reset_fishing_state();
 			gameState    = FISHING;
@@ -926,7 +1067,6 @@ int check_keys(XEvent *e)
 			fflush(stdout);
 		}
 
-		// SPACE: skill check input in FISHING
 		if (key == XK_space) {
 			if (gameState == FISHING && skillCheckActive) {
 				skillCheckActive = false;
@@ -943,7 +1083,6 @@ int check_keys(XEvent *e)
 			}
 		}
 
-		// MENU block
 		if (gameState == MENU) {
 			if (key == XK_Up || key == XK_w)
 				menuSelected = (menuSelected - 1 + menuCount) % menuCount;
@@ -954,31 +1093,24 @@ int check_keys(XEvent *e)
 			return 0;
 		}
 
-		// SHOPPING block
 		if (gameState == SHOPPING) {
-			if (key == XK_b || key == XK_B) {
-				gameState = PLAY;
-				return 0;
-			}
+			if (key == XK_b || key == XK_B) { gameState = PLAY; return 0; }
 			if (key == XK_y || key == XK_Y || key == XK_Return) {
 				if (requestedFish >= 0 && fishInventory[requestedFish] > 0) {
 					fishInventory[requestedFish]--;
 					playerGold += FISH_PRICES[requestedFish];
 					uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
 					requestedFish = fishDist(gen);
-					printf("[SHOP] Sold! Gold: %d. Next customer wants: %s\n",
-						playerGold, FISH_NAMES[requestedFish]);
+					printf("[SHOP] Sold! Gold: %d. Next: %s\n", playerGold, FISH_NAMES[requestedFish]);
 					fflush(stdout);
 				} else {
-					printf("[SHOP] Can't sell — don't have that fish.\n");
-					fflush(stdout);
+					printf("[SHOP] Can't sell.\n"); fflush(stdout);
 				}
 			}
 			if (key == XK_n || key == XK_N) {
 				uniform_int_distribution<int> fishDist(0, NUM_FISH - 1);
 				requestedFish = fishDist(gen);
-				printf("[SHOP] Declined. Next customer wants: %s\n",
-					FISH_NAMES[requestedFish]);
+				printf("[SHOP] Declined. Next: %s\n", FISH_NAMES[requestedFish]);
 				fflush(stdout);
 			}
 		}
@@ -997,40 +1129,26 @@ void physics()
 		if (g.logoAngle >= 360.0f) g.logoAngle -= 360.0f;
 	}
 
-	if (gameState == PLAY || gameState == FISHING) {
-    boatBobTime += boatBobSpeed;
-	}
+	if (gameState == PLAY || gameState == FISHING)
+		boatBobTime += boatBobSpeed;
 
 	if (gameState == PLAY) {
 		for (int s = 0; s < 2; s++) {
 			int fi = slotFish[s];
 			slotBob[s] += FISH_BOB_SPEED[fi];
-			slotX[s]   += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
-
+			if (!slotRemoved[s])
+				slotX[s] += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
 			float halfW = FISH_W[fi] / 2.0f;
-			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres)
-								: (slotX[s] + halfW < 0);
+			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres) : (slotX[s] + halfW < 0);
 			if (exited) {
 				int next = (fi + 2) % NUM_FISH;
-				slotFish[s] = next;
-				slotBob[s]  = 0.0f;
+				slotFish[s] = next; slotBob[s] = 0.0f;
+				slotRemoved[s] = false;
 				float nextHalfW = FISH_W[next] / 2.0f;
 				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
 			}
 		}
-	
-		boatBobTime += boatBobSpeed;
-		for (int s = 0; s < 2; s++) {
-			if ((fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
-				&& slotFish[s] == hookedFishIndex) {
-				slotBob[s] += FISH_BOB_SPEED[slotFish[s]];
-				continue;
-			}
-			slotBob[s] += FISH_BOB_SPEED[slotFish[s]];
-			slotX[s]   += (s == 0) ? FISH_SPEED[slotFish[s]] : -FISH_SPEED[slotFish[s]];
-		}
 	}
-
 
 	if (gameState == FISHING) {
 		static struct timeval lastTime = {0, 0};
@@ -1079,8 +1197,7 @@ void physics()
 						if (attemptCount < MAX_ATTEMPTS) {
 							start_skill_check();
 						} else {
-							printf("[FISHING] Fish got away after %d attempts.\n", attemptCount);
-							fflush(stdout);
+							printf("[FISHING] Fish got away.\n"); fflush(stdout);
 							reset_fishing_state();
 							gameState = PLAY;
 						}
@@ -1104,36 +1221,33 @@ void physics()
 		}
 
 		for (int s = 0; s < 2; s++) {
-			if (fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
-				if (slotFish[s] == hookedFishIndex) continue;
-			int   fi    = slotFish[s];
-			float speed = FISH_SPEED[fi];
-			slotBob[s] += FISH_BOB_SPEED[fi];
-			slotX[s]   += (s == 0) ? speed : -speed;
+			int fi = slotFish[s];
+			if (!slotRemoved[s] && !(fishingPhase != PHASE_WAITING && slotFish[s] == hookedFishIndex)) {				slotBob[s] += FISH_BOB_SPEED[fi];
+				slotX[s]   += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
+			}
 			float halfW = FISH_W[fi] / 2.0f;
 			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres) : (slotX[s] + halfW < 0);
 			if (exited) {
 				int next = (fi + 2) % NUM_FISH;
 				slotFish[s] = next; slotBob[s] = 0.0f;
+				slotRemoved[s] = false;
 				float nextHalfW = FISH_W[next] / 2.0f;
 				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
 			}
 		}
 	}
 
-	// ── Pachinko + slot physics ──────────────────────────────
+	// Pachinko + slot physics
 	if (gameState == PACHINKO) {
 		if (pach_show_result && pach_result_timer > 0.0f) {
 			pach_result_timer -= 0.016f;
 			if (pach_result_timer <= 0.0f) pach_show_result = false;
 		}
-
 		if (slot_spinning) {
 			slot_spin_timer -= 0.016f;
 			for (int r = 0; r < 3; r++)
 				slot_reel_offset[r] += 8.0f + r * 2.0f;
-			if (slot_spin_timer <= 0.0f)
-				slot_spin_finish();
+			if (slot_spin_timer <= 0.0f) slot_spin_finish();
 		}
 		if (slot_result_shown && slot_result_timer > 0.0f) {
 			slot_result_timer -= 0.016f;
@@ -1147,18 +1261,13 @@ void physics()
 			PachBall &b = pach_balls[i];
 			if (!b.active || b.landed_bucket >= 0) continue;
 
-			float vel[2] = {
-				b.pos[0] - b.last_pos[0],
-				b.pos[1] - b.last_pos[1]
-			};
+			float vel[2] = { b.pos[0] - b.last_pos[0], b.pos[1] - b.last_pos[1] };
 			vel[1] -= PACH_GRAVITY;
 			float speed = sqrtf(vel[0]*vel[0] + vel[1]*vel[1]);
 			if (speed > 6.0f) { vel[0] = vel[0]/speed*6.0f; vel[1] = vel[1]/speed*6.0f; }
 
-			b.last_pos[0] = b.pos[0];
-			b.last_pos[1] = b.pos[1];
-			b.pos[0] += vel[0];
-			b.pos[1] += vel[1];
+			b.last_pos[0] = b.pos[0]; b.last_pos[1] = b.pos[1];
+			b.pos[0] += vel[0]; b.pos[1] += vel[1];
 
 			if (b.pos[0] - b.radius < BOARD_L) {
 				b.pos[0] = BOARD_L + b.radius;
@@ -1170,8 +1279,8 @@ void physics()
 			}
 
 			for (int p = 0; p < pach_npeg; p++) {
-				float dx   = b.pos[0] - pach_pegs[p].x;
-				float dy   = b.pos[1] - pach_pegs[p].y;
+				float dx = b.pos[0] - pach_pegs[p].x;
+				float dy = b.pos[1] - pach_pegs[p].y;
 				float dist = sqrtf(dx*dx + dy*dy);
 				float minD = b.radius + PACH_PEG_R;
 				if (dist < minD && dist > 0.001f) {
@@ -1201,29 +1310,24 @@ void physics()
 			if (b.pos[1] - b.radius <= BOARD_B + 30.0f) {
 				int bkt = PACH_BUCKETS - 1;
 				for (int k = 0; k < PACH_BUCKETS; k++) {
-					if (b.pos[0] >= pach_bkt_x[k] && b.pos[0] < pach_bkt_x[k+1]) {
-						bkt = k; break;
-					}
+					if (b.pos[0] >= pach_bkt_x[k] && b.pos[0] < pach_bkt_x[k+1]) { bkt = k; break; }
 				}
-				b.landed_bucket   = bkt;
-				b.pos[1]          = BOARD_B + 30.0f + b.radius;
-				b.last_pos[0]     = b.pos[0];
-				b.last_pos[1]     = b.pos[1];
+				b.landed_bucket = bkt;
+				b.pos[1] = BOARD_B + 30.0f + b.radius;
+				b.last_pos[0] = b.pos[0]; b.last_pos[1] = b.pos[1];
 
 				if (bkt == 3) {
 					pach_last_payout  = 0;
 					pach_show_result  = true;
 					pach_result_timer = 0.5f;
 					slot_start();
-					printf("[PACHINKO] Bucket 3 → SLOT MACHINE triggered!\n");
+					printf("[PACHINKO] Bucket 3 → SLOT!\n");
 				} else {
-					int won           = PACH_PAYOUT[bkt];
-					playerGold       += won;
-					pach_total_won   += won;
-					pach_last_payout  = won;
-					pach_show_result  = true;
-					pach_result_timer = 1.5f;
-					printf("[PACHINKO] Bucket %d → +%d gold. Total gold: %d\n", bkt, won, playerGold);
+					int won = PACH_PAYOUT[bkt];
+					playerGold += won; pach_total_won += won;
+					pach_last_payout = won;
+					pach_show_result = true; pach_result_timer = 1.5f;
+					printf("[PACHINKO] Bucket %d → +%d gold. Total: %d\n", bkt, won, playerGold);
 				}
 				fflush(stdout);
 			}
@@ -1259,21 +1363,13 @@ void render_box()
 void select_menu_option(int i)
 {
 	switch (i) {
-		case 0:
-			printf("Start Game selected\n");
-			gameState = PLAY;
-
-			break;
+		case 0: printf("Start Game selected\n"); gameState = PLAY; break;
 		case 1:
 			printf("Character selected\n");
 			gameState = CHARACTER;
 			charSelectCursor = selectedCharacter;
 			return;
-		case 2:
-			printf("Quit selected\n");
-			exit(0);
-			break;
-	
+		case 2: printf("Quit selected\n"); exit(0); break;
 	}
 }
 
@@ -1331,9 +1427,10 @@ void render_senor_pescado()
 	glDisable(GL_BLEND);
 }
 
-
 void render_fish_slot(int s)
 {
+	if (slotRemoved[s]) return;
+
 	GLuint textures[NUM_FISH] = {
 		g.fishOneTex, g.reynbohTex, g.deathSnapperTex, g.exoTroutTex, g.griesellyTex
 	};
@@ -1360,16 +1457,25 @@ void render_bite_alert()
 {
 	if (biteAlertTimer <= 0.0f) return;
 	float alpha = 0.7f + 0.3f * sinf(biteAlertTimer * 20.0f);
+	// full-width alert banner
 	glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	float stripH = 40.0f, stripY = g.yres * 0.5f;
-	glColor4f(0,0,0, alpha * 0.6f);
+	float stripH = 46.0f, stripY = g.yres * 0.5f - stripH * 0.5f;
+	// dark backing stripe
+	glColor4f(0.0f, 0.0f, 0.0f, alpha * 0.72f);
 	glBegin(GL_QUADS);
-		glVertex2f(0,      stripY - stripH*0.5f); glVertex2f(0,      stripY + stripH*0.5f);
-		glVertex2f(g.xres, stripY + stripH*0.5f); glVertex2f(g.xres, stripY - stripH*0.5f);
+		glVertex2f(0, stripY); glVertex2f(0, stripY+stripH);
+		glVertex2f(g.xres, stripY+stripH); glVertex2f(g.xres, stripY);
+	glEnd();
+	// amber accent top/bottom lines
+	glColor4f(1.0f, 0.75f, 0.0f, alpha);
+	glLineWidth(2.0f);
+	glBegin(GL_LINES);
+		glVertex2f(0, stripY+stripH); glVertex2f(g.xres, stripY+stripH);
+		glVertex2f(0, stripY);        glVertex2f(g.xres, stripY);
 	glEnd();
 	glEnable(GL_TEXTURE_2D);
-	Rect r; r.center = 1; r.left = g.xres/2; r.bot = (int)(stripY - 10);
+	Rect r; r.center = 1; r.left = g.xres/2; r.bot = (int)(stripY + 12);
 	ggprint16(&r, 0, 0x00ffcc00, "!  FISH ON THE LINE  !");
 	glDisable(GL_BLEND);
 }
@@ -1381,123 +1487,195 @@ void render_catch_screen()
 	GLuint fishTextures[NUM_FISH] = {
 		g.fishOneTex, g.reynbohTex, g.deathSnapperTex, g.exoTroutTex, g.griesellyTex
 	};
+
+	// full-screen dim
 	glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glColor4f(0,0.05f,0.1f,0.72f);
+	glColor4f(0.0f, 0.04f, 0.1f, 0.75f);
 	glBegin(GL_QUADS);
 		glVertex2f(0,0); glVertex2f(0,g.yres); glVertex2f(g.xres,g.yres); glVertex2f(g.xres,0);
 	glEnd();
-	float panW = 320.0f, panH = 280.0f;
-	float panX = (g.xres-panW)*0.5f, panY = (g.yres-panH)*0.5f;
-	glColor4f(0.05f,0.15f,0.25f,0.92f);
+
+	float panW = 340.0f, panH = 300.0f;
+	float panX = (g.xres - panW) * 0.5f, panY = (g.yres - panH) * 0.5f;
+
+	// drop shadow
+	glColor4f(0.0f, 0.0f, 0.0f, 0.45f);
 	glBegin(GL_QUADS);
-		glVertex2f(panX,panY); glVertex2f(panX,panY+panH);
-		glVertex2f(panX+panW,panY+panH); glVertex2f(panX+panW,panY);
+		glVertex2f(panX+8, panY-8); glVertex2f(panX+8, panY+panH-8);
+		glVertex2f(panX+panW+8, panY+panH-8); glVertex2f(panX+panW+8, panY-8);
 	glEnd();
-	glLineWidth(2.5f); glColor4f(1.0f,0.85f,0.2f,1.0f);
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(panX,panY); glVertex2f(panX,panY+panH);
-		glVertex2f(panX+panW,panY+panH); glVertex2f(panX+panW,panY);
+
+	// panel body
+	draw_rounded_rect_filled(panX, panY, panW, panH, 12.0f, 0.05f, 0.12f, 0.22f, 0.96f);
+
+	// gold header bar
+	draw_rounded_rect_filled(panX, panY+panH-44, panW, 44.0f, 12.0f, 0.85f, 0.62f, 0.05f, 1.0f);
+	// flatten bottom of header bar
+	glColor4f(0.85f, 0.62f, 0.05f, 1.0f);
+	glBegin(GL_QUADS);
+		glVertex2f(panX, panY+panH-22); glVertex2f(panX, panY+panH-44);
+		glVertex2f(panX+panW, panY+panH-44); glVertex2f(panX+panW, panY+panH-22);
 	glEnd();
+
+	// panel outline
+	draw_rounded_rect_outline(panX, panY, panW, panH, 12.0f, 2.5f, 1.0f, 0.85f, 0.2f, 1.0f);
+
+	// corner bracket decorations
+	draw_corner_brackets(panX, panY, panW, panH, 14.0f, 2.0f, 1.0f, 1.0f, 0.5f, 0.8f);
+
+	// divider below header
+	draw_hline(panX+12, panY+panH-46, panW-24, 1.0f, 1.0f, 0.85f, 0.2f, 0.5f);
+
 	glDisable(GL_BLEND);
-	float imgW = FISH_W[hookedFishIndex]*1.3f, imgH = FISH_H[hookedFishIndex]*1.3f;
-	float imgCX = g.xres*0.5f, imgCY = panY+panH*0.58f;
+
+	// fish image
+	float imgW = FISH_W[hookedFishIndex] * 1.4f, imgH = FISH_H[hookedFishIndex] * 1.4f;
+	float imgCX = g.xres * 0.5f, imgCY = panY + panH * 0.52f;
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glColor4f(1,1,1,1); glBindTexture(GL_TEXTURE_2D, fishTextures[hookedFishIndex]);
+	glColor4f(1,1,1,1);
+	glBindTexture(GL_TEXTURE_2D, fishTextures[hookedFishIndex]);
 	glBegin(GL_QUADS);
 		glTexCoord2f(0,1); glVertex2f(imgCX-imgW*0.5f, imgCY-imgH*0.5f);
 		glTexCoord2f(0,0); glVertex2f(imgCX-imgW*0.5f, imgCY+imgH*0.5f);
 		glTexCoord2f(1,0); glVertex2f(imgCX+imgW*0.5f, imgCY+imgH*0.5f);
 		glTexCoord2f(1,1); glVertex2f(imgCX+imgW*0.5f, imgCY-imgH*0.5f);
 	glEnd();
-	glDisable(GL_BLEND);
-	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect r; r.center = 1; r.left = g.xres/2;
-	r.bot = (int)(panY+panH-22); ggprint16(&r, 0, 0x00ffe94f, "FISH CAUGHT!");
-	r.bot = (int)(panY+30);      ggprint16(&r, 0, 0x00ffffff, "%s", FISH_NAMES[hookedFishIndex]);
-	r.bot = (int)(panY+10);      ggprint16(&r, 0, 0x00aaddff, "Total caught: %d", totalCaught+1);
+
+	// text
+	Rect r; r.center = 1; r.left = g.xres / 2;
+	r.bot = (int)(panY + panH - 30); ggprint16(&r, 0, 0x00140a00, "FISH CAUGHT!");
+	r.bot = (int)(panY + 38);        ggprint16(&r, 0, 0x00ffffff, "%s", FISH_NAMES[hookedFishIndex]);
+	r.bot = (int)(panY + 16);        ggprint16(&r, 0, 0x0088ccff, "Total caught: %d", totalCaught + 1);
+
 	glDisable(GL_BLEND);
 }
 
+// ============================================================
+// FISHING SKILL CHECK HUD  (redesigned)
+// ============================================================
 void render_skill_check()
 {
-	float cx = g.xres * 0.78f, cy = g.yres * 0.55f, r = 80.0f;
-	const int SEG = 120;
-	glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	// ── Panel background ────────────────────────────────────────
+	float panW = 200.0f, panH = 290.0f;
+	float panX = g.xres - panW - 10.0f;
+	float panY = g.yres * 0.28f;
+
+	draw_rounded_rect_filled(panX, panY, panW, panH, 10.0f, 0.04f, 0.10f, 0.18f, 0.88f);
+	draw_rounded_rect_outline(panX, panY, panW, panH, 10.0f, 2.0f, 0.3f, 0.7f, 1.0f, 0.8f);
+	draw_corner_brackets(panX, panY, panW, panH, 10.0f, 2.0f, 0.3f, 0.8f, 1.0f, 0.9f);
+
+	// ── Reel progress bar ────────────────────────────────────────
+	float barW = panW - 24.0f, barH = 14.0f;
+	float barX = panX + 12.0f, barY = panY + panH - 54.0f;	float prog = reelProgress / reelMax;
+	if (prog > 1.0f) prog = 1.0f;
+	float br = (prog > 0.66f) ? 0.18f : 0.2f;
+	float bg_ = (prog > 0.66f) ? 0.8f  : 0.55f;
+	float bb  = (prog > 0.66f) ? 0.44f : 0.9f;
+	draw_progress_bar(barX, barY, barW, barH, prog, br, bg_, bb, 0.08f, 0.08f, 0.12f);
+
+	// label above bar
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glLineWidth(14.0f); glColor4f(0,0,0,0.55f);
-	glBegin(GL_LINE_LOOP);
-	for (int i=0;i<SEG;i++){float a=(float)i/SEG*2*M_PI; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
-	glEnd();
-	glLineWidth(6.0f); glColor4f(0.1f,0.22f,0.35f,1);
-	glBegin(GL_LINE_LOOP);
-	for (int i=0;i<SEG;i++){float a=(float)i/SEG*2*M_PI; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
-	glEnd();
-	glLineWidth(8.0f); glColor4f(0.18f,0.8f,0.44f,1);
-	int zSegs = max(2,(int)(SEG*SC_ZONE_SIZE/(2*M_PI)));
-	glBegin(GL_LINE_STRIP);
-	for (int i=0;i<=zSegs;i++){float a=scZoneStart+(float)i/zSegs*SC_ZONE_SIZE; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
-	glEnd();
-	glLineWidth(8.0f); glColor4f(1.0f,0.85f,0.2f,1);
-	int pSegs = max(2,(int)(SEG*SC_PERFECT_SIZE/(2*M_PI)));
-	glBegin(GL_LINE_STRIP);
-	for (int i=0;i<=pSegs;i++){float a=scZoneStart+(float)i/pSegs*SC_PERFECT_SIZE; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
-	glEnd();
-	glLineWidth(2.5f); glColor4f(1,0.26f,0.26f,1);
-	glBegin(GL_LINES);
-		glVertex2f(cx,cy); glVertex2f(cx+cosf(needleAngle)*r,cy+sinf(needleAngle)*r);
-	glEnd();
-	glPointSize(9.0f); glColor4f(1,0.45f,0.45f,1);
-	glBegin(GL_POINTS); glVertex2f(cx+cosf(needleAngle)*r,cy+sinf(needleAngle)*r); glEnd();
-	glPointSize(7.0f); glColor4f(0.9f,0.95f,1,1);
-	glBegin(GL_POINTS); glVertex2f(cx,cy); glEnd();
+	Rect rLabel; rLabel.center = 1; rLabel.left = (int)(panX + panW * 0.5f);
+	rLabel.bot = (int)(barY + barH + 4);
+	ggprint16(&rLabel, 0, 0x00aaddff, "REEL");
 	glDisable(GL_BLEND);
+
+	// ── Skill check wheel ────────────────────────────────────────
+	float cx = panX + panW * 0.5f;
+	float cy = panY + 145.0f;
+	float r  = 68.0f;
+	const int SEG = 120;
 
 	glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	float barW=160,barH=12,barX=cx-barW/2,barY=cy-r-30;
-	float filled = (reelProgress/reelMax)*barW;
-	if (filled>barW) filled=barW;
-	glColor4f(0.1f,0.1f,0.15f,0.8f);
-	glBegin(GL_QUADS);
-		glVertex2f(barX,barY); glVertex2f(barX,barY+barH);
-		glVertex2f(barX+barW,barY+barH); glVertex2f(barX+barW,barY);
-	glEnd();
-	float fillRatio = reelProgress/reelMax;
-	if (fillRatio>0.66f) glColor4f(0.18f,0.8f,0.44f,1);
-	else                 glColor4f(0.2f,0.55f,0.9f,1);
-	glBegin(GL_QUADS);
-		glVertex2f(barX,barY); glVertex2f(barX,barY+barH);
-		glVertex2f(barX+filled,barY+barH); glVertex2f(barX+filled,barY);
-	glEnd();
-	glColor4f(0.7f,0.85f,1,0.6f); glLineWidth(1.5f);
+
+	// outer glow ring
+	glLineWidth(18.0f); glColor4f(0.0f, 0.0f, 0.0f, 0.45f);
 	glBegin(GL_LINE_LOOP);
-		glVertex2f(barX,barY); glVertex2f(barX,barY+barH);
-		glVertex2f(barX+barW,barY+barH); glVertex2f(barX+barW,barY);
+	for (int i=0;i<SEG;i++){float a=(float)i/SEG*2*M_PI; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
 	glEnd();
-	glDisable(GL_BLEND); glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect rHud; rHud.center=1; rHud.left=(int)cx;
-	if (fishingPhase==PHASE_MINIGAME) {
-		Rect rHint; rHint.center=1; rHint.left=(int)cx; rHint.bot=(int)(barY-4);
-		ggprint16(&rHint,20,0x00aaddff,"SPACE to reel!");
-		rHint.bot=(int)(barY-24);
-		unsigned int ac = (MAX_ATTEMPTS-attemptCount==1)?0x00ff4f4f:0x00ffffff;
-		ggprint16(&rHint,0,ac,"Attempts: %d / %d",attemptCount,MAX_ATTEMPTS);
+
+	// base ring (dark blue)
+	glLineWidth(7.0f); glColor4f(0.08f, 0.18f, 0.30f, 1.0f);
+	glBegin(GL_LINE_LOOP);
+	for (int i=0;i<SEG;i++){float a=(float)i/SEG*2*M_PI; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
+	glEnd();
+
+	// hit zone (green arc)
+	glLineWidth(9.0f); glColor4f(0.18f, 0.80f, 0.44f, 1.0f);
+	int zSegs = max(2,(int)(SEG * SC_ZONE_SIZE / (2*M_PI)));
+	glBegin(GL_LINE_STRIP);
+	for (int i=0;i<=zSegs;i++){float a=scZoneStart+(float)i/zSegs*SC_ZONE_SIZE; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
+	glEnd();
+
+	// perfect zone (gold arc)
+	glLineWidth(9.0f); glColor4f(1.0f, 0.85f, 0.15f, 1.0f);
+	int pSegs = max(2,(int)(SEG * SC_PERFECT_SIZE / (2*M_PI)));
+	glBegin(GL_LINE_STRIP);
+	for (int i=0;i<=pSegs;i++){float a=scZoneStart+(float)i/pSegs*SC_PERFECT_SIZE; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
+	glEnd();
+
+	// needle
+	glLineWidth(2.5f); glColor4f(1.0f, 0.25f, 0.25f, 1.0f);
+	glBegin(GL_LINES);
+		glVertex2f(cx, cy);
+		glVertex2f(cx + cosf(needleAngle)*r, cy + sinf(needleAngle)*r);
+	glEnd();
+	// needle tip dot
+	glPointSize(9.0f); glColor4f(1.0f, 0.4f, 0.4f, 1.0f);
+	glBegin(GL_POINTS); glVertex2f(cx+cosf(needleAngle)*r, cy+sinf(needleAngle)*r); glEnd();
+	// center dot
+	glPointSize(7.0f); glColor4f(0.9f, 0.95f, 1.0f, 1.0f);
+	glBegin(GL_POINTS); glVertex2f(cx, cy); glEnd();
+
+	glDisable(GL_BLEND);
+
+	// ── Info text inside panel ───────────────────────────────────
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	Rect rHud; rHud.center = 1; rHud.left = (int)(panX + panW * 0.5f);
+
+	// SPACE hint
+	rHud.bot = (int)(panY + 36);
+	ggprint16(&rHud, 0, 0x0066aadd, "[SPACE] cast");
+
+	// attempts
+	rHud.bot = (int)(panY + 18);
+	unsigned int ac = (MAX_ATTEMPTS - attemptCount == 1) ? 0x00ff4f4f : 0x00aaaaaa;
+	ggprint16(&rHud, 0, ac, "%d / %d attempts", attemptCount, MAX_ATTEMPTS);
+
+	// streak badge
+	if (streak > 1) {
+		rHud.bot = (int)(panY + panH - 6);
+		ggprint16(&rHud, 0, 0x00ffe94f, "STREAK x%d", streak);
 	}
-	if (streak>1) { rHud.bot=(int)(cy+r+30); ggprint16(&rHud,0,0x00ffe94f,"STREAK x%d",streak); }
-	Rect rCorner; rCorner.center=0; rCorner.left=10; rCorner.bot=g.yres-20;
-	ggprint16(&rCorner,0,0x00c8e6ff,"FISH CAUGHT: %d",totalCaught);
-	if (skillResult!=SC_NONE && resultTimer>0) {
-		rHud.bot=(int)(cy+r+55);
+
+	// result feedback
+	if (skillResult != SC_NONE && resultTimer > 0.0f) {
 		unsigned int col; const char *msg;
-		if      (skillResult==SC_GREAT){col=0x00ffe94f;msg="GREAT!";}
-		else if (skillResult==SC_HIT)  {col=0x004fffb0;msg="NICE!";}
-		else                           {col=0x00ff4f4f;msg="MISSED!";}
-		ggprint16(&rHud,0,col,msg);
+		if      (skillResult == SC_GREAT) { col = 0x00ffe94f; msg = "GREAT!"; }
+		else if (skillResult == SC_HIT)   { col = 0x004fffb0; msg = "NICE!";  }
+		else                              { col = 0x00ff4f4f; msg = "MISSED!";}
+		// place just above the wheel
+		rHud.bot = (int)(cy + r + 6);
+		ggprint16(&rHud, 0, col, "%s", msg);
 	}
+
+	glDisable(GL_BLEND);
+
+	// ── Bottom-left total caught badge ───────────────────────────
+	float badgeW = 140.0f, badgeH = 28.0f;
+	float badgeX = g.xres - badgeW - 8.0f, badgeY = g.yres - badgeH - 8.0f;
+	draw_rounded_rect_filled(badgeX, badgeY, badgeW, badgeH, 6.0f, 0.04f, 0.10f, 0.18f, 0.85f);
+	draw_rounded_rect_outline(badgeX, badgeY, badgeW, badgeH, 6.0f, 1.5f, 0.3f, 0.6f, 1.0f, 0.7f);
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect rCorner; rCorner.center=1; rCorner.left=(int)(badgeX + badgeW/2); rCorner.bot=(int)(badgeY + 6);
+	ggprint16(&rCorner, 0, 0x00c8e6ff, "Caught: %d", totalCaught);
 	glDisable(GL_BLEND);
 }
 
@@ -1534,16 +1712,11 @@ void open_shop()
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glColor4f(1,1,1,1);
 
-	// Top shelf — first 2 fish
-	float fishScale  = 0.700f;
-	float topShelfY  = 95.0f;
-	float topStartX  = 390.0f;
-	float topSpacing = 90.0f;
-
+	float fishScale = 0.700f;
+	float topShelfY = 95.0f, topStartX = 390.0f, topSpacing = 90.0f;
 	for (int i = 0; i < 2; i++) {
 		if (fishInventory[i] <= 0) continue;
-		float fw = FISH_W[i] * fishScale;
-		float fh = FISH_H[i] * fishScale;
+		float fw = FISH_W[i]*fishScale, fh = FISH_H[i]*fishScale;
 		float fx = topStartX + i * topSpacing;
 		glBindTexture(GL_TEXTURE_2D, fishTextures[i]);
 		glPushMatrix(); glTranslatef(fx, topShelfY, 0.0f);
@@ -1554,17 +1727,11 @@ void open_shop()
 			glTexCoord2f(1,1); glVertex2f( fw/2,-fh/2);
 		glEnd(); glPopMatrix();
 	}
-
-	// Bottom shelf — last 3 fish
-	float botShelfY  = 50.0f;
-	float botStartX  = 330.0f;
-	float botSpacing = 90.0f;
-
+	float botShelfY = 50.0f, botStartX = 330.0f, botSpacing = 90.0f;
 	for (int i = 2; i < NUM_FISH; i++) {
 		if (fishInventory[i] <= 0) continue;
-		float fw = FISH_W[i] * fishScale;
-		float fh = FISH_H[i] * fishScale;
-		float fx = botStartX + (i - 2) * botSpacing;
+		float fw = FISH_W[i]*fishScale, fh = FISH_H[i]*fishScale;
+		float fx = botStartX + (i-2) * botSpacing;
 		glBindTexture(GL_TEXTURE_2D, fishTextures[i]);
 		glPushMatrix(); glTranslatef(fx, botShelfY, 0.0f);
 		glBegin(GL_QUADS);
@@ -1576,334 +1743,218 @@ void open_shop()
 	}
 	glDisable(GL_BLEND);
 
-	// Gold display
+	// gold badge top-left
+	float goldBadgeW = 130.0f, goldBadgeH = 28.0f;
+	draw_rounded_rect_filled(8.0f, g.yres-goldBadgeH-8.0f, goldBadgeW, goldBadgeH, 6.0f, 0.55f, 0.40f, 0.02f, 0.95f);
+	draw_rounded_rect_outline(8.0f, g.yres-goldBadgeH-8.0f, goldBadgeW, goldBadgeH, 6.0f, 1.5f, 1.0f, 0.85f, 0.2f, 0.9f);
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect rGold; rGold.center=0; rGold.left=10; rGold.bot=g.yres-20;
-	ggprint16(&rGold,0,0x00000000,"Gold: %d",playerGold);
+	Rect rGold; rGold.center=0; rGold.left=18; rGold.bot=(int)(g.yres-goldBadgeH-8.0f+8);
+	ggprint16(&rGold, 0, 0x00ffe94f, "Gold: %d", playerGold);
 	glDisable(GL_BLEND);
 
-	// ── Brown cow NPC ─────────────────────────────────────────────
+	// brown cow NPC
 	float scale = 4.0f;
-	float w = img[12].width  * scale;
-	float h = img[12].height * scale;
-	float cx = g.xres / 2.0f;
-	float cy = g.yres - 265.0f;
-
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND);
+	float w = img[12].width*scale, h = img[12].height*scale;
+	float cx = g.xres / 2.0f, cy = g.yres - 265.0f;
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glColor4f(1.0, 1.0, 1.0, 1.0);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glBindTexture(GL_TEXTURE_2D, g.brownTex);
-	glPushMatrix();
-	glTranslatef(cx, cy, 0.0f);
+	glPushMatrix(); glTranslatef(cx, cy, 0.0f);
 	glBegin(GL_QUADS);
-		glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/4, -h/4);
-		glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/4,  h/4);
-		glTexCoord2f(1.0f, 0.0f); glVertex2f( w/4,  h/4);
-		glTexCoord2f(1.0f, 1.0f); glVertex2f( w/4, -h/4);
+		glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/4,-h/4);
+		glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/4, h/4);
+		glTexCoord2f(1.0f, 0.0f); glVertex2f( w/4, h/4);
+		glTexCoord2f(1.0f, 1.0f); glVertex2f( w/4,-h/4);
 	glEnd();
-	glDisable(GL_BLEND);
-	glPopMatrix();
+	glDisable(GL_BLEND); glPopMatrix();
 
-	// ── Customer speech bubble ────────────────────────────────────
-	float boxW = 350.0f;
-	float boxH = 40.0f;
-	float boxX = cx - boxW / 2.0f;
-	float boxY = cy - h / 4.0f - 20.0f;
-
-	glDisable(GL_TEXTURE_2D);
-	glColor3ub(255, 127, 80);
-	glBegin(GL_QUADS);
-		glVertex2f(boxX,        boxY);
-		glVertex2f(boxX,        boxY + boxH);
-		glVertex2f(boxX + boxW, boxY + boxH);
-		glVertex2f(boxX + boxW, boxY);
-	glEnd();
-	glColor3ub(0, 0, 0);
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(boxX,        boxY);
-		glVertex2f(boxX,        boxY + boxH);
-		glVertex2f(boxX + boxW, boxY + boxH);
-		glVertex2f(boxX + boxW, boxY);
-	glEnd();
-
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect r;
-	r.center = 1;
-	r.left = (int)cx;
-	r.bot = (int)(boxY + 12);
-	if (requestedFish >= 0 && requestedFish < NUM_FISH)
-		ggprint16(&r, 0, 0x00000000, "Howdy! Can I get a %s?", FISH_NAMES[requestedFish]);
-	glDisable(GL_BLEND);
-
-	// ── Inventory panel ───────────────────────────────────────────
-	float panW  = 300.0f;
-	float panH  = 180.0f;
-	float panX  = 10.0f;
-	float panY  = (g.yres - panH) / 2.0f;
-	float rowH  = panH / NUM_FISH;
-
-	glDisable(GL_TEXTURE_2D);
-	glColor4f(0.05f,0.1f,0.15f,0.85f); glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBegin(GL_QUADS);
-		glVertex2f(panX,panY); glVertex2f(panX,panY+panH);
-		glVertex2f(panX+panW,panY+panH); glVertex2f(panX+panW,panY);
-	glEnd();
-	glLineWidth(1.5f); glColor4f(0.7f,0.85f,1,0.7f);
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(panX,panY); glVertex2f(panX,panY+panH);
-		glVertex2f(panX+panW,panY+panH); glVertex2f(panX+panW,panY);
-	glEnd();
-	glDisable(GL_BLEND);
+	// speech bubble
+	float boxW = 350.0f, boxH = 40.0f;
+	float boxX = cx - boxW/2.0f, boxY = cy - h/4.0f - 20.0f;
+	draw_rounded_rect_filled(boxX, boxY, boxW, boxH, 8.0f, 1.0f, 0.50f, 0.31f, 0.95f);
+	draw_rounded_rect_outline(boxX, boxY, boxW, boxH, 8.0f, 1.5f, 0.6f, 0.2f, 0.0f, 0.8f);
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect r; r.center=1; r.left=(int)cx; r.bot=(int)(boxY+12);
+	if (requestedFish >= 0 && requestedFish < NUM_FISH)
+		ggprint16(&r, 0, 0x00ffffff, "Howdy! Can I get a %s?", FISH_NAMES[requestedFish]);
+	glDisable(GL_BLEND);
 
-	Rect rHeader;
-	rHeader.center = 0;
-	rHeader.left   = (int)(panX + 8);
-	rHeader.bot    = (int)(panY + panH - 4);
-	ggprint16(&rHeader, 0, 0x00000000, "Your Inventory");
+	// inventory panel
+	float panW=300.0f, panH=180.0f, panX=490.0f, panY=(g.yres-250.0f);
+	float rowH = panH / NUM_FISH;
+	draw_rounded_rect_filled(panX, panY, panW, panH, 8.0f, 0.05f, 0.10f, 0.15f, 0.88f);
+
+	// panel header bar
+	draw_rounded_rect_filled(panX, panY+panH-28.0f, panW, 28.0f, 8.0f, 0.12f, 0.30f, 0.50f, 0.95f);
+	glColor4f(0.12f, 0.30f, 0.50f, 0.95f);
+	glBegin(GL_QUADS);
+		glVertex2f(panX, panY+panH-28.0f); glVertex2f(panX, panY+panH-14.0f);
+		glVertex2f(panX+panW, panY+panH-14.0f); glVertex2f(panX+panW, panY+panH-28.0f);
+	glEnd();
+	draw_rounded_rect_outline(panX, panY, panW, panH, 8.0f, 1.5f, 0.3f, 0.65f, 1.0f, 0.7f);
+
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect rHeader; rHeader.center=0; rHeader.left=(int)(panX+10); rHeader.bot=(int)(panY+panH-22);
+	ggprint16(&rHeader, 0, 0x00e0f0ff, "Your Inventory");
 
 	for (int i = 0; i < NUM_FISH; i++) {
-		float rowY = panY + panH - 26 - (i + 1) * rowH * 0.78f;
+		float rowY = panY + panH - 26 - (i+1)*rowH*0.78f;
 		bool wanted = (i == requestedFish);
 		if (wanted) {
-			glDisable(GL_TEXTURE_2D);
-			glColor4f(0.2f,0.55f,0.2f,0.4f);
-			glBegin(GL_QUADS);
-				glVertex2f(panX+2,rowY-2); glVertex2f(panX+2,rowY+rowH*0.7f);
-				glVertex2f(panX+panW-2,rowY+rowH*0.7f); glVertex2f(panX+panW-2,rowY-2);
-			glEnd();
-			glEnable(GL_TEXTURE_2D);
+			draw_rounded_rect_filled(panX+4, rowY-2, panW-8, rowH*0.72f, 4.0f, 0.15f, 0.50f, 0.15f, 0.40f);
 		}
-		Rect rRow; rRow.center=0; rRow.left=(int)(panX+8); rRow.bot=(int)rowY;
+		Rect rRow; rRow.center=0; rRow.left=(int)(panX+10); rRow.bot=(int)rowY;
 		unsigned int col = wanted ? 0x0088ff44 : (fishInventory[i]>0 ? 0x00ffffff : 0x00666666);
-		ggprint16(&rRow,0,col,"%-16s x%d  ($%d)",FISH_NAMES[i],fishInventory[i],FISH_PRICES[i]);
+		ggprint16(&rRow, 0, col, "%-14s x%d  $%d", FISH_NAMES[i], fishInventory[i], FISH_PRICES[i]);
 	}
 	glDisable(GL_BLEND);
 
-	// Sell / Decline buttons
+	// sell / decline buttons
 	bool canSell = (requestedFish >= 0 && fishInventory[requestedFish] > 0);
-	float btnY=panY-55, btnH=36, btnW=140, sellX=panX, decX=panX+btnW+10;
-	glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	if (canSell) glColor4f(0.15f,0.65f,0.25f,1);
-	else         glColor4f(0.25f,0.25f,0.25f,0.7f);
-	glBegin(GL_QUADS);
-		glVertex2f(sellX,btnY); glVertex2f(sellX,btnY+btnH);
-		glVertex2f(sellX+btnW,btnY+btnH); glVertex2f(sellX+btnW,btnY);
-	glEnd();
-	glColor4f(0.65f,0.15f,0.15f,1);
-	glBegin(GL_QUADS);
-		glVertex2f(decX,btnY); glVertex2f(decX,btnY+btnH);
-		glVertex2f(decX+btnW,btnY+btnH); glVertex2f(decX+btnW,btnY);
-	glEnd();
-	glLineWidth(1.5f); glColor4f(1,1,1,0.5f);
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(sellX,btnY); glVertex2f(sellX,btnY+btnH);
-		glVertex2f(sellX+btnW,btnY+btnH); glVertex2f(sellX+btnW,btnY);
-	glEnd();
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(decX,btnY); glVertex2f(decX,btnY+btnH);
-		glVertex2f(decX+btnW,btnY+btnH); glVertex2f(decX+btnW,btnY);
-	glEnd();
-	glDisable(GL_BLEND);
+	float btnY=panY-52, btnH=38, btnW=140, sellX=panX, decX=panX+btnW+10;
+
+	draw_rounded_rect_filled(sellX, btnY, btnW, btnH, 7.0f,
+		canSell ? 0.10f : 0.22f, canSell ? 0.60f : 0.22f, canSell ? 0.18f : 0.22f, 1.0f);
+	draw_rounded_rect_filled(decX,  btnY, btnW, btnH, 7.0f, 0.55f, 0.10f, 0.10f, 1.0f);
+	draw_rounded_rect_outline(sellX, btnY, btnW, btnH, 7.0f, 1.5f, 1.0f, 1.0f, 1.0f, 0.4f);
+	draw_rounded_rect_outline(decX,  btnY, btnW, btnH, 7.0f, 1.5f, 1.0f, 1.0f, 1.0f, 0.4f);
+
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	Rect rSell;
-	rSell.center = 1;
-	rSell.left   = (int)(sellX + btnW / 2.0f);
-	rSell.bot    = (int)(btnY + 10);
+	Rect rSell; rSell.center=1; rSell.left=(int)(sellX+btnW/2); rSell.bot=(int)(btnY+12);
 	ggprint16(&rSell, 0, 0x00ffffff, "[Y] Sell");
-
-	Rect rDec;
-	rDec.center = 1;
-	rDec.left   = (int)(decX + btnW / 2.0f);
-	rDec.bot    = (int)(btnY + 10);
+	Rect rDec; rDec.center=1; rDec.left=(int)(decX+btnW/2); rDec.bot=(int)(btnY+12);
 	ggprint16(&rDec, 0, 0x00ffffff, "[N] Decline");
 
 	if (!canSell && requestedFish >= 0) {
-		Rect rWarn;
-		rWarn.center = 0;
-		rWarn.left   = (int)sellX + 30;
-		rWarn.bot    = (int)(btnY - 18);
+		Rect rWarn; rWarn.center=0; rWarn.left=(int)sellX+30; rWarn.bot=(int)(btnY-18);
 		ggprint16(&rWarn, 0, 0x00ff5555, "You don't have that fish!");
 	}
 	glDisable(GL_BLEND);
 }
 
 GLuint get_character_tex(int charIndex) {
-    switch (charIndex) {
-        case 0: return g.boatTex;   // Gordoni
-        case 1: return g.winTex;    // Win
-        case 2: return g.kianTex;   // Kian
-        case 3: return g.simonTex;  // Simon
-        default: return g.boatTex;
-    }
+	switch (charIndex) {
+		case 0: return g.boatTex;
+		case 1: return g.winTex;
+		case 2: return g.kianTex;
+		case 3: return g.simonTex;
+		default: return g.boatTex;
+	}
 }
-
 
 void render_boat() {
-    float scale = 4.0f;
-    // Character img indices: 0=gordoni(4), 1=win(13), 2=kian(14), 3=simon(15)
-    int charImgIndex[NUM_CHARACTERS] = { 4, 13, 14, 15 };
-    int activeIndex = (gameState == FISHING) ? 10 : charImgIndex[selectedCharacter];
-
-    float w = img[activeIndex].width  * scale;
-    float h = img[activeIndex].height * scale;
-    float cx = g.xres / 2.0f;
-    float cy = (g.yres / 2.0f) - 80.0f;
-    float bob = sinf(boatBobTime) * boatBobAmp;
-
-    GLuint activeTex = (gameState == FISHING) ? g.dipDipTex : get_character_tex(selectedCharacter);
-
-    glEnable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glColor4f(1.0, 1.0, 1.0, 1.0);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, activeTex);
-    glPushMatrix();
-    glTranslatef(cx, cy + bob, 0.0f);
-    glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2, -h/2);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2,  h/2);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f( w/2,  h/2);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f( w/2, -h/2);
-    glEnd();
-    glDisable(GL_BLEND);
-    glPopMatrix();
+	float scale = 4.0f;
+	int charImgIndex[NUM_CHARACTERS] = { 4, 13, 14, 15 };
+	int activeIndex = (gameState == FISHING) ? 10 : charImgIndex[selectedCharacter];
+	float w = img[activeIndex].width*scale, h = img[activeIndex].height*scale;
+	float cx = g.xres/2.0f, cy = (g.yres/2.0f)-80.0f;
+	float bob = sinf(boatBobTime)*boatBobAmp;
+	GLuint activeTex = (gameState == FISHING) ? g.dipDipTex : get_character_tex(selectedCharacter);
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glColor4f(1.0, 1.0, 1.0, 1.0);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBindTexture(GL_TEXTURE_2D, activeTex);
+	glPushMatrix(); glTranslatef(cx, cy+bob, 0.0f);
+	glBegin(GL_QUADS);
+		glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2,-h/2);
+		glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2, h/2);
+		glTexCoord2f(1.0f, 0.0f); glVertex2f( w/2, h/2);
+		glTexCoord2f(1.0f, 1.0f); glVertex2f( w/2,-h/2);
+	glEnd();
+	glDisable(GL_BLEND); glPopMatrix();
 }
-
 
 void render_character_select()
 {
-    // Draw the fishing background behind the UI
-    glClear(GL_COLOR_BUFFER_BIT);
-    glColor3f(1.0, 1.0, 1.0);
-    glBindTexture(GL_TEXTURE_2D, g.fishingTex);
-    glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2i(0, 0);
-        glTexCoord2f(0.0f, 0.0f); glVertex2i(0, g.yres);
-        glTexCoord2f(1.0f, 0.0f); glVertex2i(g.xres, g.yres);
-        glTexCoord2f(1.0f, 1.0f); glVertex2i(g.xres, 0);
-    glEnd();
+	glClear(GL_COLOR_BUFFER_BIT);
+	glColor3f(1.0, 1.0, 1.0);
+	glBindTexture(GL_TEXTURE_2D, g.fishingTex);
+	glBegin(GL_QUADS);
+		glTexCoord2f(0.0f,1.0f); glVertex2i(0,0);
+		glTexCoord2f(0.0f,0.0f); glVertex2i(0,g.yres);
+		glTexCoord2f(1.0f,0.0f); glVertex2i(g.xres,g.yres);
+		glTexCoord2f(1.0f,1.0f); glVertex2i(g.xres,0);
+	glEnd();
 
-    GLuint charTextures[NUM_CHARACTERS] = {
-        g.boatTex, g.winTex, g.kianTex, g.simonTex
-    };
+	GLuint charTextures[NUM_CHARACTERS] = { g.boatTex, g.winTex, g.kianTex, g.simonTex };
 
-    // Title
-    glEnable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    Rect rTitle;
-    rTitle.center = 1;
-    rTitle.left   = g.xres / 2;
-    rTitle.bot    = g.yres - 50;
-    ggprint16(&rTitle, 0, 0x00ffffff, "-- SELECT YOUR CHARACTER --");
-    glDisable(GL_BLEND);
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect rTitle; rTitle.center=1; rTitle.left=g.xres/2; rTitle.bot=g.yres-50;
+	ggprint16(&rTitle, 0, 0x00ffffff, "-- SELECT YOUR CHARACTER --");
+	glDisable(GL_BLEND);
 
-    // Layout: space 4 characters evenly across the screen
-    float cardW   = 120.0f;
-    float cardH   = 140.0f;
-    float spacing = (float)g.xres / (NUM_CHARACTERS + 1);
-    float cardY   = (g.yres / 2.0f) - 20.0f;
+	float cardW=120.0f, cardH=140.0f;
+	float spacing=(float)g.xres/(NUM_CHARACTERS+1);
+	float cardY=(g.yres/2.0f)-20.0f;
 
-    for (int i = 0; i < NUM_CHARACTERS; i++) {
-        float cx = spacing * (i + 1);
+	for (int i = 0; i < NUM_CHARACTERS; i++) {
+		float cx = spacing*(i+1);
+		glDisable(GL_TEXTURE_2D);
+		if (i == charSelectCursor) {
+			glLineWidth(3.0f); glColor3ub(255,220,50);
+			glBegin(GL_LINE_LOOP);
+				glVertex2f(cx-cardW/2-6, cardY-cardH/2-6);
+				glVertex2f(cx-cardW/2-6, cardY+cardH/2+6);
+				glVertex2f(cx+cardW/2+6, cardY+cardH/2+6);
+				glVertex2f(cx+cardW/2+6, cardY-cardH/2-6);
+			glEnd();
+			glColor4f(1.0f,0.85f,0.1f,0.15f); glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glBegin(GL_QUADS);
+				glVertex2f(cx-cardW/2-6,cardY-cardH/2-6);
+				glVertex2f(cx-cardW/2-6,cardY+cardH/2+6);
+				glVertex2f(cx+cardW/2+6,cardY+cardH/2+6);
+				glVertex2f(cx+cardW/2+6,cardY-cardH/2-6);
+			glEnd();
+			glDisable(GL_BLEND);
+		}
+		if (i == selectedCharacter) {
+			glLineWidth(2.0f); glColor3ub(50,220,100);
+			glBegin(GL_LINE_LOOP);
+				glVertex2f(cx-cardW/2-3,cardY-cardH/2-3);
+				glVertex2f(cx-cardW/2-3,cardY+cardH/2+3);
+				glVertex2f(cx+cardW/2+3,cardY+cardH/2+3);
+				glVertex2f(cx+cardW/2+3,cardY-cardH/2-3);
+			glEnd();
+		}
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(1,1,1,1);
+		glBindTexture(GL_TEXTURE_2D, charTextures[i]);
+		glPushMatrix(); glTranslatef(cx, cardY, 0.0f);
+		glBegin(GL_QUADS);
+			glTexCoord2f(0,1); glVertex2f(-cardW/2,-cardH/2);
+			glTexCoord2f(0,0); glVertex2f(-cardW/2, cardH/2);
+			glTexCoord2f(1,0); glVertex2f( cardW/2, cardH/2);
+			glTexCoord2f(1,1); glVertex2f( cardW/2,-cardH/2);
+		glEnd();
+		glPopMatrix(); glDisable(GL_BLEND);
 
-        // Highlight box around currently cursored character
-        glDisable(GL_TEXTURE_2D);
-        if (i == charSelectCursor) {
-            // Bright gold selection box
-            glLineWidth(3.0f);
-            glColor3ub(255, 220, 50);
-            glBegin(GL_LINE_LOOP);
-                glVertex2f(cx - cardW/2 - 6, cardY - cardH/2 - 6);
-                glVertex2f(cx - cardW/2 - 6, cardY + cardH/2 + 6);
-                glVertex2f(cx + cardW/2 + 6, cardY + cardH/2 + 6);
-                glVertex2f(cx + cardW/2 + 6, cardY - cardH/2 - 6);
-            glEnd();
-            // Subtle gold fill behind selected card
-            glColor4f(1.0f, 0.85f, 0.1f, 0.15f);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glBegin(GL_QUADS);
-                glVertex2f(cx - cardW/2 - 6, cardY - cardH/2 - 6);
-                glVertex2f(cx - cardW/2 - 6, cardY + cardH/2 + 6);
-                glVertex2f(cx + cardW/2 + 6, cardY + cardH/2 + 6);
-                glVertex2f(cx + cardW/2 + 6, cardY - cardH/2 - 6);
-            glEnd();
-            glDisable(GL_BLEND);
-        }
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		Rect rName; rName.center=1; rName.left=(int)cx; rName.bot=(int)(cardY-cardH/2-40);
+		unsigned int nameCol = (i==charSelectCursor) ? 0x00ffe94f : 0x00ffffff;
+		ggprint16(&rName, 0, nameCol, CHAR_NAMES[i]);
+		if (i == selectedCharacter) {
+			Rect rActive; rActive.center=1; rActive.left=(int)cx; rActive.bot=(int)(cardY-cardH/2-60);
+			ggprint16(&rActive, 0, 0x0044ff88, "[ ACTIVE ]");
+		}
+		glDisable(GL_BLEND);
+	}
 
-        // Green checkmark box around the actively selected character
-        if (i == selectedCharacter) {
-            glLineWidth(2.0f);
-            glColor3ub(50, 220, 100);
-            glBegin(GL_LINE_LOOP);
-                glVertex2f(cx - cardW/2 - 3, cardY - cardH/2 - 3);
-                glVertex2f(cx - cardW/2 - 3, cardY + cardH/2 + 3);
-                glVertex2f(cx + cardW/2 + 3, cardY + cardH/2 + 3);
-                glVertex2f(cx + cardW/2 + 3, cardY - cardH/2 - 3);
-            glEnd();
-        }
-
-        // Character sprite
-        glEnable(GL_TEXTURE_2D);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-        glBindTexture(GL_TEXTURE_2D, charTextures[i]);
-        glPushMatrix();
-        glTranslatef(cx, cardY, 0.0f);
-        glBegin(GL_QUADS);
-            glTexCoord2f(0.0f, 1.0f); glVertex2f(-cardW/2, -cardH/2);
-            glTexCoord2f(0.0f, 0.0f); glVertex2f(-cardW/2,  cardH/2);
-            glTexCoord2f(1.0f, 0.0f); glVertex2f( cardW/2,  cardH/2);
-            glTexCoord2f(1.0f, 1.0f); glVertex2f( cardW/2, -cardH/2);
-        glEnd();
-        glPopMatrix();
-        glDisable(GL_BLEND);
-
-        // Character name below sprite
-        glEnable(GL_TEXTURE_2D);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        Rect rName;
-        rName.center = 1;
-        rName.left   = (int)cx;
-        rName.bot    = (int)(cardY - cardH/2 - 40);
-        unsigned int nameCol = (i == charSelectCursor) ? 0x00ffe94f : 0x00ffffff;
-        ggprint16(&rName, 0, nameCol, CHAR_NAMES[i]);
-
-        // "ACTIVE" tag under the selected character's name
-        if (i == selectedCharacter) {
-            Rect rActive;
-            rActive.center = 1;
-            rActive.left   = (int)cx;
-            rActive.bot    = (int)(cardY - cardH/2 - 60);
-            ggprint16(&rActive, 0, 0x0044ff88, "[ ACTIVE ]");
-        }
-        glDisable(GL_BLEND);
-    }
-
-    // Instructions at the bottom
-    glEnable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    Rect rHint;
-    rHint.center = 1;
-    rHint.left   = g.xres / 2;
-    rHint.bot    = 20;
-    ggprint16(&rHint, 0, 0x00aaddff, "LEFT / RIGHT to browse   ENTER to select   ESC to go back");
-    glDisable(GL_BLEND);
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect rHint; rHint.center=1; rHint.left=g.xres/2; rHint.bot=20;
+	ggprint16(&rHint, 0, 0x00aaddff, "LEFT / RIGHT to browse   ENTER to select   ESC to go back");
+	glDisable(GL_BLEND);
 }
+
 // ============================================================
 // SLOT MACHINE OVERLAY RENDER
 // ============================================================
@@ -1922,272 +1973,280 @@ void render_slot_overlay()
 		}
 	};
 
+	// dim backdrop
 	glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glColor4f(0.0f, 0.0f, 0.0f, 0.78f);
+	glColor4f(0.0f, 0.0f, 0.0f, 0.80f);
 	glBegin(GL_QUADS);
-		glVertex2f(0,0); glVertex2f(0,g.yres);
-		glVertex2f(g.xres,g.yres); glVertex2f(g.xres,0);
+		glVertex2f(0,0); glVertex2f(0,g.yres); glVertex2f(g.xres,g.yres); glVertex2f(g.xres,0);
 	glEnd();
 
-	float panW=380, panH=260;
+	float panW=400.0f, panH=280.0f;
 	float panX=(g.xres-panW)*0.5f, panY=(g.yres-panH)*0.5f;
 
+	// drop shadow
 	glColor4f(0,0,0,0.5f);
 	glBegin(GL_QUADS);
-		glVertex2f(panX+6,panY-6); glVertex2f(panX+6,panY+panH-6);
-		glVertex2f(panX+panW+6,panY+panH-6); glVertex2f(panX+panW+6,panY-6);
+		glVertex2f(panX+8,panY-8); glVertex2f(panX+8,panY+panH-8);
+		glVertex2f(panX+panW+8,panY+panH-8); glVertex2f(panX+panW+8,panY-8);
 	glEnd();
 
-	glColor4f(0.12f, 0.04f, 0.04f, 1.0f);
+	// main panel
+	draw_rounded_rect_filled(panX, panY, panW, panH, 14.0f, 0.10f, 0.03f, 0.03f, 1.0f);
+
+	// gold header strip
+	draw_rounded_rect_filled(panX, panY+panH-46.0f, panW, 46.0f, 14.0f, 0.75f, 0.52f, 0.02f, 1.0f);
+	// flatten bottom of header
+	glColor4f(0.75f, 0.52f, 0.02f, 1.0f);
 	glBegin(GL_QUADS);
-		glVertex2f(panX,panY); glVertex2f(panX,panY+panH);
-		glVertex2f(panX+panW,panY+panH); glVertex2f(panX+panW,panY);
+		glVertex2f(panX, panY+panH-46.0f); glVertex2f(panX, panY+panH-23.0f);
+		glVertex2f(panX+panW, panY+panH-23.0f); glVertex2f(panX+panW, panY+panH-46.0f);
 	glEnd();
 
-	glLineWidth(3.0f); glColor4f(1.0f,0.85f,0.2f,1.0f);
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(panX,panY); glVertex2f(panX,panY+panH);
-		glVertex2f(panX+panW,panY+panH); glVertex2f(panX+panW,panY);
-	glEnd();
+	// gold outline
+	draw_rounded_rect_outline(panX, panY, panW, panH, 14.0f, 3.0f, 1.0f, 0.82f, 0.15f, 1.0f);
+	// inner inset line
+	draw_rounded_rect_outline(panX+5, panY+5, panW-10, panH-10, 10.0f, 1.0f, 0.65f, 0.45f, 0.05f, 0.55f);
 
-	glLineWidth(1.0f); glColor4f(0.7f,0.5f,0.1f,0.5f);
-	glBegin(GL_LINE_LOOP);
-		glVertex2f(panX+4,panY+4); glVertex2f(panX+4,panY+panH-4);
-		glVertex2f(panX+panW-4,panY+panH-4); glVertex2f(panX+panW-4,panY+4);
-	glEnd();
+	// corner diamonds
+	draw_diamond(panX+6,       panY+6,       5.0f, 1.0f, 0.82f, 0.15f, 0.9f);
+	draw_diamond(panX+panW-6,  panY+6,       5.0f, 1.0f, 0.82f, 0.15f, 0.9f);
+	draw_diamond(panX+6,       panY+panH-6,  5.0f, 1.0f, 0.82f, 0.15f, 0.9f);
+	draw_diamond(panX+panW-6,  panY+panH-6,  5.0f, 1.0f, 0.82f, 0.15f, 0.9f);
 
-	float reelW=82, reelH=82;
-	float reelCY = panY + panH*0.50f;
-	float reelXs[3] = {
-		panX + panW*0.20f,
-		panX + panW*0.50f,
-		panX + panW*0.80f
-	};
+	glDisable(GL_BLEND);
 
-	for (int r=0; r<3; r++){
+	// title text
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	Rect rTitle; rTitle.center=1; rTitle.left=(int)(panX+panW*0.5f); rTitle.bot=(int)(panY+panH-32);
+	ggprint16(&rTitle, 0, 0x00110800, "JACKPOT! TIME TO ROLL!");
+	glDisable(GL_BLEND);
+
+	// ── Reel windows ─────────────────────────────────────────────
+	float reelW=84.0f, reelH=84.0f;
+	float reelCY = panY + panH*0.46f;
+	float reelXs[3] = { panX+panW*0.20f, panX+panW*0.50f, panX+panW*0.80f };
+
+	for (int r=0; r<3; r++) {
 		float rx = reelXs[r]-reelW*0.5f, ry = reelCY-reelH*0.5f;
-		glDisable(GL_TEXTURE_2D);
-		glColor4f(0.95f,0.92f,0.82f,1);
-		glBegin(GL_QUADS);
-			glVertex2f(rx,ry); glVertex2f(rx,ry+reelH);
-			glVertex2f(rx+reelW,ry+reelH); glVertex2f(rx+reelW,ry);
-		glEnd();
 
+		// reel background + inner shadow
+		draw_rounded_rect_filled(rx-3, ry-3, reelW+6, reelH+6, 6.0f, 0.0f, 0.0f, 0.0f, 0.6f);
+		draw_rounded_rect_filled(rx, ry, reelW, reelH, 4.0f, 0.94f, 0.91f, 0.80f, 1.0f);
+
+		// spinning stripe effect
 		if (slot_spinning) {
 			float stripe = fmodf(slot_reel_offset[r], reelH);
+			glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			glColor4f(0.0f,0.0f,0.0f,0.06f);
-			for (float sy = -reelH; sy < reelH*2; sy += 12.0f) {
-				float s0 = ry + sy + stripe;
-				float s1 = s0 + 6.0f;
-				if (s1 > ry && s0 < ry+reelH) {
-					if (s0 < ry) s0 = ry;
-					if (s1 > ry+reelH) s1 = ry+reelH;
+			for (float sy=-reelH; sy<reelH*2; sy+=12.0f) {
+				float s0=ry+sy+stripe, s1=s0+6.0f;
+				if (s1>ry && s0<ry+reelH) {
+					if (s0 < ry)        s0 = ry;
+					if (s1 > ry+reelH)  s1 = ry+reelH;
+					if (s1 <= s0) continue;  // skip degenerate zero-height quad
 					glBegin(GL_QUADS);
 						glVertex2f(rx,s0); glVertex2f(rx,s1);
 						glVertex2f(rx+reelW,s1); glVertex2f(rx+reelW,s0);
 					glEnd();
 				}
 			}
+			glDisable(GL_BLEND);
 		}
 
-		glColor4f(0.25f,0.08f,0.08f,1); glLineWidth(2.5f);
-		glBegin(GL_LINE_LOOP);
-			glVertex2f(rx,ry); glVertex2f(rx,ry+reelH);
-			glVertex2f(rx+reelW,ry+reelH); glVertex2f(rx+reelW,ry);
-		glEnd();
+		// reel border
+		draw_rounded_rect_outline(rx, ry, reelW, reelH, 4.0f, 2.5f, 0.22f, 0.06f, 0.06f, 1.0f);
 
+		// fish image inside reel
 		int symIdx;
 		if (slot_spinning) {
-			int offset = (int)(slot_reel_offset[r] / 15.0f) % REEL_LEN;
+			int offset = (int)(slot_reel_offset[r]/15.0f) % REEL_LEN;
 			symIdx = slot_reel_strip[r][offset];
 		} else {
 			symIdx = slot_reel_strip[r][slot_reels[r]];
 		}
-
 		GLuint fishTex = get_slot_tex(symIdx);
-		float imgPad = 6.0f;
-		float imgW = reelW - imgPad*2, imgH = reelH - imgPad*2;
-		float imgX = reelXs[r] - imgW*0.5f, imgY = reelCY - imgH*0.5f;
-
+		float imgPad=8.0f, imgW=reelW-imgPad*2, imgH=reelH-imgPad*2;
+		float imgX=reelXs[r]-imgW*0.5f, imgY=reelCY-imgH*0.5f;
 		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4f(1,1,1, slot_spinning ? 0.55f : 1.0f);
+		glColor4f(1,1,1, slot_spinning ? 0.5f : 1.0f);
 		glBindTexture(GL_TEXTURE_2D, fishTex);
 		glBegin(GL_QUADS);
-			glTexCoord2f(0,1); glVertex2f(imgX,       imgY);
-			glTexCoord2f(0,0); glVertex2f(imgX,       imgY+imgH);
-			glTexCoord2f(1,0); glVertex2f(imgX+imgW,  imgY+imgH);
-			glTexCoord2f(1,1); glVertex2f(imgX+imgW,  imgY);
+			glTexCoord2f(0,1); glVertex2f(imgX,      imgY);
+			glTexCoord2f(0,0); glVertex2f(imgX,      imgY+imgH);
+			glTexCoord2f(1,0); glVertex2f(imgX+imgW, imgY+imgH);
+			glTexCoord2f(1,1); glVertex2f(imgX+imgW, imgY);
 		glEnd();
 		glDisable(GL_TEXTURE_2D);
 
+		// winning highlight pulse
 		if (!slot_spinning && slot_result_shown) {
-			int sym0 = slot_reel_strip[0][slot_reels[0]];
-			int sym1 = slot_reel_strip[1][slot_reels[1]];
-			int sym2 = slot_reel_strip[2][slot_reels[2]];
+			int sym0=slot_reel_strip[0][slot_reels[0]];
+			int sym1=slot_reel_strip[1][slot_reels[1]];
+			int sym2=slot_reel_strip[2][slot_reels[2]];
 			bool isMatch = false;
-			if (sym0 == sym1 && sym1 == sym2) {
-				isMatch = true;
-			} else {
-				if (r == 0 && sym0 == sym1) isMatch = true;
-				if (r == 1 && (sym0 == sym1 || sym1 == sym2)) isMatch = true;
-				if (r == 2 && sym1 == sym2) isMatch = true;
+			if (sym0==sym1 && sym1==sym2) isMatch=true;
+			else {
+				if (r==0 && sym0==sym1) isMatch=true;
+				if (r==1 && (sym0==sym1||sym1==sym2)) isMatch=true;
+				if (r==2 && sym1==sym2) isMatch=true;
 			}
 			if (isMatch) {
-				float pulse = 0.4f + 0.6f * fabsf(sinf((float)clock() / 120.0f));
-				glEnable(GL_BLEND);
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				glColor4f(1.0f, 0.85f, 0.0f, pulse * 0.35f);
+				float pulse = 0.4f + 0.6f*fabsf(sinf((float)clock()/120.0f));
+				glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				glColor4f(1.0f,0.85f,0.0f, pulse*0.35f);
 				glBegin(GL_QUADS);
 					glVertex2f(rx,ry); glVertex2f(rx,ry+reelH);
 					glVertex2f(rx+reelW,ry+reelH); glVertex2f(rx+reelW,ry);
 				glEnd();
-				glLineWidth(3.0f); glColor4f(1.0f, 0.9f, 0.2f, pulse);
-				glBegin(GL_LINE_LOOP);
-					glVertex2f(rx,ry); glVertex2f(rx,ry+reelH);
-					glVertex2f(rx+reelW,ry+reelH); glVertex2f(rx+reelW,ry);
-				glEnd();
+				draw_rounded_rect_outline(rx, ry, reelW, reelH, 4.0f, 3.5f, 1.0f, 0.88f, 0.15f, pulse);
 				glDisable(GL_BLEND);
 			}
 		}
-	}
 
-	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDisable(GL_BLEND);
-
-	Rect rTitle; rTitle.center=1; rTitle.left=(int)(panX+panW*0.5f); rTitle.bot=(int)(panY+panH-22);
-	ggprint16(&rTitle,0,0x00ffe94f,"~ FISH SLOT MACHINE ~");
-
-	for (int r=0; r<3; r++){
-		int symIdx;
-		if (slot_spinning) {
-			int offset = (int)(slot_reel_offset[r] / 15.0f) % REEL_LEN;
-			symIdx = slot_reel_strip[r][offset];
-		} else {
-			symIdx = slot_reel_strip[r][slot_reels[r]];
-		}
+		// label below reel
 		unsigned int col;
 		switch(symIdx){
-			case 2: col=0x00ff4444; break;
-			case 4: col=0x00ff88ff; break;
-			case 3: col=0x0044ffaa; break;
-			case 1: col=0x00ffcc44; break;
+			case 2: col=0x00ff4444; break; case 4: col=0x00ff88ff; break;
+			case 3: col=0x0044ffaa; break; case 1: col=0x00ffcc44; break;
 			default: col=0x00aaddff; break;
 		}
-		Rect rs; rs.center=1; rs.left=(int)reelXs[r]; rs.bot=(int)(reelCY - reelH*0.5f - 16);
-		ggprint16(&rs,0,col,"%s",SLOT_SYM_LABELS[symIdx]);
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		Rect rs; rs.center=1; rs.left=(int)reelXs[r]; rs.bot=(int)(reelCY-reelH*0.5f-16);
+		ggprint16(&rs, 0, col, "%s", SLOT_SYM_LABELS[symIdx]);
+		glDisable(GL_BLEND);
 	}
 
-	if (slot_spinning){
-		float prog = 1.0f - (slot_spin_timer / slot_spin_dur);
-		glDisable(GL_TEXTURE_2D);
-		float bx=panX+20, by=panY+14, bw=panW-40, bh=10;
-		glColor4f(0.15f,0.05f,0.05f,1);
-		glBegin(GL_QUADS);
-			glVertex2f(bx,by); glVertex2f(bx,by+bh);
-			glVertex2f(bx+bw,by+bh); glVertex2f(bx+bw,by);
-		glEnd();
-		glColor4f(1.0f,0.7f,0.1f,1);
-		glBegin(GL_QUADS);
-			glVertex2f(bx,by); glVertex2f(bx,by+bh);
-			glVertex2f(bx+bw*prog,by+bh); glVertex2f(bx+bw*prog,by);
-		glEnd();
-		glEnable(GL_TEXTURE_2D);
-		Rect rs; rs.center=1; rs.left=(int)(panX+panW*0.5f); rs.bot=(int)(panY+28);
-		ggprint16(&rs,0,0x00ffaa44,"Spinning...");
-	} else if (slot_result_shown){
-		Rect rr; rr.center=1; rr.left=(int)(panX+panW*0.5f);
-		rr.bot=(int)(panY+28);
+	// ── Bottom info area ─────────────────────────────────────────
+	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-		int sym0 = slot_reel_strip[0][slot_reels[0]];
-		int sym1 = slot_reel_strip[1][slot_reels[1]];
-		int sym2 = slot_reel_strip[2][slot_reels[2]];
-		bool threeMatch = (sym0 == sym1 && sym1 == sym2);
-
-		if (threeMatch && slot_result >= 10000){
+	// spin progress bar or result
+	if (slot_spinning) {
+		float prog = 1.0f - (slot_spin_timer/slot_spin_dur);
+		// draw bar inside panel at bottom
+		draw_progress_bar(panX+20, panY+56, panW-40, 10.0f, prog,
+			1.0f, 0.68f, 0.08f, 0.12f, 0.04f, 0.04f);
+		Rect rs; rs.center=1; rs.left=(int)(panX+panW*0.5f); rs.bot=(int)(panY + 200);
+		ggprint16(&rs, 0, 0x00ffaa44, "Spinning...");
+	} else if (slot_result_shown) {
+		int sym0=slot_reel_strip[0][slot_reels[0]];
+		int sym1=slot_reel_strip[1][slot_reels[1]];
+		int sym2=slot_reel_strip[2][slot_reels[2]];
+		bool threeMatch = (sym0==sym1 && sym1==sym2);
+		Rect rr; rr.center=1; rr.left=(int)(panX+panW*0.5f); rr.bot=(int)(panY+35);
+		if (threeMatch && slot_result >= 10000) {
 			float pulse = fabsf(sinf((float)clock()/80.0f));
 			unsigned int jcol = (pulse > 0.5f) ? 0x00ffee00 : 0x00ff8800;
-			ggprint16(&rr,0,jcol,"*** JACKPOT! +%d gold! ***", slot_result);
+			ggprint16(&rr, 0, jcol, "*** JACKPOT! +%d gold! ***", slot_result);
 		} else if (slot_result > 5) {
 			unsigned int wcol = (slot_result >= 500) ? 0x00ffdd44 : 0x0088ff88;
-			ggprint16(&rr,0,wcol,"+%d gold!", slot_result);
+			ggprint16(&rr, 0, wcol, "+%d gold!", slot_result);
 		} else {
-			ggprint16(&rr,0,0x00aaddff,"Min payout: +%d gold", slot_result);
+			ggprint16(&rr, 0, 0x00aaddff, "Min payout: +%d gold", slot_result);
 		}
 		rr.bot=(int)(panY+10);
-		ggprint16(&rr,0,0x00888888,"[Click or ESC] to continue");
+		ggprint16(&rr, 0, 0x00888888, "[Click or ESC] to continue");
 	}
-
-	Rect rLeg; rLeg.center=1; rLeg.left=(int)(panX+panW*0.5f); rLeg.bot=(int)(panY+panH-40);
-	ggprint16(&rLeg,0,0x00cccccc,"ExoTrout=5  Grie=25  Milk=100");
-	rLeg.bot=(int)(panY+panH-56);
-	ggprint16(&rLeg,0,0x00ff8888,"Reyn=500    DEATH=10000!");
-
 	glDisable(GL_BLEND);
 }
 
 // ============================================================
-// PACHINKO RENDER HELPERS
+// PACHINKO RENDER
 // ============================================================
 static void pach_draw_circle_filled(float cx, float cy, float r, int segs)
 {
 	glBegin(GL_TRIANGLE_FAN);
 	glVertex2f(cx, cy);
-	for (int i=0;i<=segs;i++){
-		float a=(float)i/segs*2*3.14159265f;
-		glVertex2f(cx+cosf(a)*r, cy+sinf(a)*r);
-	}
+	for (int i=0;i<=segs;i++){float a=(float)i/segs*2*3.14159265f; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
 	glEnd();
 }
 
 static void pach_draw_circle_outline(float cx, float cy, float r, int segs)
 {
 	glBegin(GL_LINE_LOOP);
-	for (int i=0;i<segs;i++){
-		float a=(float)i/segs*2*3.14159265f;
-		glVertex2f(cx+cosf(a)*r, cy+sinf(a)*r);
-	}
+	for (int i=0;i<segs;i++){float a=(float)i/segs*2*3.14159265f; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
 	glEnd();
 }
 
 void render_pachinko()
 {
+	// ── Dark background ─────────────────────────────────────────
 	glClear(GL_COLOR_BUFFER_BIT);
 	glDisable(GL_TEXTURE_2D);
+	glColor3f(0.06f, 0.06f, 0.10f);
+	glBegin(GL_QUADS);
+		glVertex2f(0,0); glVertex2f(0,g.yres); glVertex2f(g.xres,g.yres); glVertex2f(g.xres,0);
+	glEnd();
 
-	glColor3f(0.05f,0.08f,0.12f);
+	// ── Board panel ──────────────────────────────────────────────
+	// outer glow border (wide, semi-transparent)
+	glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(0.25f, 0.50f, 0.90f, 0.25f);
+	glLineWidth(8.0f);
+	glBegin(GL_LINE_LOOP);
+		glVertex2f(BOARD_L-4, BOARD_B-4); glVertex2f(BOARD_L-4, BOARD_T+4);
+		glVertex2f(BOARD_R+4, BOARD_T+4); glVertex2f(BOARD_R+4, BOARD_B-4);
+	glEnd();
+	glDisable(GL_BLEND);
+
+	// board fill
+	glColor3f(0.04f, 0.07f, 0.11f);
 	glBegin(GL_QUADS);
 		glVertex2f(BOARD_L,BOARD_B); glVertex2f(BOARD_L,BOARD_T);
 		glVertex2f(BOARD_R,BOARD_T); glVertex2f(BOARD_R,BOARD_B);
 	glEnd();
-	glColor3f(0.25f,0.45f,0.70f); glLineWidth(2.0f);
+
+	// board border
+	glColor3f(0.22f, 0.42f, 0.72f); glLineWidth(2.0f);
 	glBegin(GL_LINE_LOOP);
 		glVertex2f(BOARD_L,BOARD_B); glVertex2f(BOARD_L,BOARD_T);
 		glVertex2f(BOARD_R,BOARD_T); glVertex2f(BOARD_R,BOARD_B);
 	glEnd();
 
+	// corner bracket decorations on board
+	draw_corner_brackets(BOARD_L, BOARD_B, BOARD_W, BOARD_H, 16.0f, 2.5f, 0.4f, 0.7f, 1.0f, 0.9f);
+
+	// ── Aim indicator ────────────────────────────────────────────
 	if (!slot_active) {
-		glColor3f(0.4f,0.6f,1.0f); glLineWidth(1.0f);
+		glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		// dashed vertical line
+		glColor4f(0.4f, 0.65f, 1.0f, 0.55f); glLineWidth(1.5f);
+		float lineTop = BOARD_T - 2.0f, lineBot = BOARD_T - 32.0f;
+		// draw as segments for a dashed look
+		float dashH = 4.0f, gapH = 3.0f, y = lineTop;
 		glBegin(GL_LINES);
-			glVertex2f(pach_aim_x, BOARD_T-2); glVertex2f(pach_aim_x, BOARD_T-30);
+		while (y > lineBot) {
+			glVertex2f(pach_aim_x, y);
+			glVertex2f(pach_aim_x, fmaxf(y - dashH, lineBot));
+			y -= dashH + gapH;
+		}
 		glEnd();
-		glColor3f(0.3f,0.6f,1.0f);
-		pach_draw_circle_outline(pach_aim_x, BOARD_T-PACH_BALL_R-4, PACH_BALL_R, 16);
+		// aim circle
+		glColor4f(0.3f, 0.6f, 1.0f, 0.8f); glLineWidth(2.0f);
+		pach_draw_circle_outline(pach_aim_x, BOARD_T-PACH_BALL_R-4, PACH_BALL_R, 20);
+		// inner dot
+		glColor4f(0.5f, 0.8f, 1.0f, 0.6f);
+		pach_draw_circle_filled(pach_aim_x, BOARD_T-PACH_BALL_R-4, 3.0f, 12);
+		glDisable(GL_BLEND);
 	}
 
+	// ── Buckets ──────────────────────────────────────────────────
 	static const float BKT_COLORS[PACH_BUCKETS][3] = {
-		{0.5f,0.08f,0.08f}, {0.55f,0.38f,0.06f}, {0.15f,0.55f,0.25f},
-		{0.12f,0.35f,0.75f},
-		{0.15f,0.55f,0.25f}, {0.55f,0.38f,0.06f}, {0.5f,0.08f,0.08f}
+		{0.45f,0.06f,0.06f}, {0.50f,0.33f,0.04f}, {0.12f,0.48f,0.20f},
+		{0.10f,0.30f,0.72f},
+		{0.12f,0.48f,0.20f}, {0.50f,0.33f,0.04f}, {0.45f,0.06f,0.06f}
 	};
-	float bktTop = BOARD_B + 30.0f;
-	for (int k=0;k<PACH_BUCKETS;k++){
+	float bktTop = BOARD_B + 32.0f;
+	for (int k = 0; k < PACH_BUCKETS; k++) {
 		float x0=pach_bkt_x[k], x1=pach_bkt_x[k+1];
-		if (k==3){
+		if (k == 3) {
 			float pulse = 0.5f + 0.5f*sinf((float)(clock())/50.0f);
-			glColor3f(0.05f + pulse*0.2f, 0.15f + pulse*0.3f, 0.55f + pulse*0.25f);
+			glColor3f(0.05f+pulse*0.22f, 0.15f+pulse*0.32f, 0.55f+pulse*0.28f);
 		} else {
 			glColor3fv(BKT_COLORS[k]);
 		}
@@ -2195,74 +2254,180 @@ void render_pachinko()
 			glVertex2f(x0,BOARD_B); glVertex2f(x0,bktTop);
 			glVertex2f(x1,bktTop);  glVertex2f(x1,BOARD_B);
 		glEnd();
-		glColor3f(0.25f,0.45f,0.70f);
-		glBegin(GL_LINES);
-			glVertex2f(x0,BOARD_B); glVertex2f(x0,bktTop);
+		// top highlight stripe
+		float br=BKT_COLORS[k][0]*1.6f, bg=BKT_COLORS[k][1]*1.6f, bb=BKT_COLORS[k][2]*1.6f;
+		if (k==3) { br=0.4f; bg=0.6f; bb=1.0f; }
+		glColor3f(fminf(br,1.0f), fminf(bg,1.0f), fminf(bb,1.0f));
+		glBegin(GL_QUADS);
+			glVertex2f(x0,bktTop-4); glVertex2f(x0,bktTop);
+			glVertex2f(x1,bktTop);   glVertex2f(x1,bktTop-4);
 		glEnd();
+		// divider
+		glColor3f(0.18f, 0.30f, 0.55f); glLineWidth(1.0f);
+		glBegin(GL_LINES); glVertex2f(x0,BOARD_B); glVertex2f(x0,bktTop); glEnd();
 	}
 
-	glColor3f(0.75f,0.80f,0.90f);
+	// bucket labels with little backing
+	for (int k = 0; k < PACH_BUCKETS; k++) {
+		float lx = (pach_bkt_x[k] + pach_bkt_x[k+1]) * 0.5f;
+		float lw = pach_bkt_x[k+1] - pach_bkt_x[k];
+		// tiny label background
+		glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(0.0f, 0.0f, 0.0f, 0.45f);
+		glBegin(GL_QUADS);
+			glVertex2f(lx-lw*0.42f, BOARD_B+2); glVertex2f(lx-lw*0.42f, BOARD_B+20);
+			glVertex2f(lx+lw*0.42f, BOARD_B+20); glVertex2f(lx+lw*0.42f, BOARD_B+2);
+		glEnd();
+		glDisable(GL_BLEND);
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		Rect rb; rb.center=1; rb.left=(int)lx; rb.bot=(int)(BOARD_B+6);
+		unsigned int col = (k==3) ? 0x00aaddff : 0x00ffffff;
+		ggprint16(&rb, 0, col, "%s", PACH_LABELS[k]);
+		glDisable(GL_BLEND);
+	}
+
+	// ── Pegs ─────────────────────────────────────────────────────
+	glDisable(GL_TEXTURE_2D);
+	// peg glow
+	glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glColor4f(0.55f, 0.70f, 1.0f, 0.18f);
+	for (int p=0;p<pach_npeg;p++)
+		pach_draw_circle_filled(pach_pegs[p].x, pach_pegs[p].y, PACH_PEG_R+4, 14);
+	glDisable(GL_BLEND);
+	// peg fill (light silver)
+	glColor3f(0.75f, 0.80f, 0.92f);
 	for (int p=0;p<pach_npeg;p++)
 		pach_draw_circle_filled(pach_pegs[p].x, pach_pegs[p].y, PACH_PEG_R, 14);
-	glColor3f(0.55f,0.60f,0.72f);
+	// peg highlight (top-left bright spot)
+	glColor3f(1.0f, 1.0f, 1.0f);
+	for (int p=0;p<pach_npeg;p++)
+		pach_draw_circle_filled(pach_pegs[p].x-2.0f, pach_pegs[p].y+2.0f, PACH_PEG_R*0.35f, 8);
+	// peg outline
+	glColor3f(0.40f, 0.48f, 0.65f); glLineWidth(1.0f);
 	for (int p=0;p<pach_npeg;p++)
 		pach_draw_circle_outline(pach_pegs[p].x, pach_pegs[p].y, PACH_PEG_R, 14);
 
+	// ── Balls ────────────────────────────────────────────────────
 	for (int i=0;i<pach_n;i++){
 		PachBall &b = pach_balls[i];
 		if (!b.active) continue;
+		// glow
+		glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(b.col[0], b.col[1], b.col[2], 0.30f);
+		pach_draw_circle_filled(b.pos[0], b.pos[1], b.radius+4, 14);
+		glDisable(GL_BLEND);
+		// body
 		glColor3fv(b.col);
 		pach_draw_circle_filled(b.pos[0], b.pos[1], b.radius, 14);
-		glColor3f(1.0f,0.9f,0.7f);
+		// shine
+		glColor3f(1.0f, 1.0f, 1.0f);
+		pach_draw_circle_filled(b.pos[0]-b.radius*0.28f, b.pos[1]+b.radius*0.28f, b.radius*0.32f, 8);
+		// outline
+		glColor3f(1.0f, 0.85f, 0.65f); glLineWidth(1.0f);
 		pach_draw_circle_outline(b.pos[0], b.pos[1], b.radius, 14);
 	}
 
-	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect r; r.center=0; r.left=10; r.bot=g.yres-20;
-	ggprint16(&r,22,0x00ffe94f,"PACHINKO");
-	ggprint16(&r,22,0x00aaddff,"Won this session: %d", pach_total_won);
-	ggprint16(&r,22,0x00888888,"Balls launched: %d",   pach_balls_used);
-	r.bot=90;
-	ggprint16(&r,22,0x00cccccc,"[Click] Drop ball  (-%d gold)", PACH_COST);
-	ggprint16(&r,22,0x00cccccc,"[ESC]   Back to fishing");
+	// ── Left HUD panel ───────────────────────────────────────────
+	float hudW = BOARD_L - 8.0f;
+	if (hudW < 10.0f) hudW = 80.0f;  // fallback if board fills screen
 
+	// Gold badge (top-right corner of screen)
 	{
-		float gx = g.xres - 150.0f, gy = g.yres - 38.0f;
-		float gw = 140.0f, gh = 28.0f;
-		glDisable(GL_TEXTURE_2D);
-		glColor4f(0.0f,0.0f,0.0f,0.55f);
-		glBegin(GL_QUADS);
-			glVertex2f(gx-4,gy-4); glVertex2f(gx-4,gy+gh+4);
-			glVertex2f(gx+gw+4,gy+gh+4); glVertex2f(gx+gw+4,gy-4);
-		glEnd();
-		glColor4f(0.85f,0.65f,0.05f,1.0f); glLineWidth(2.0f);
-		glBegin(GL_LINE_LOOP);
-			glVertex2f(gx-4,gy-4); glVertex2f(gx-4,gy+gh+4);
-			glVertex2f(gx+gw+4,gy+gh+4); glVertex2f(gx+gw+4,gy-4);
-		glEnd();
-		glEnable(GL_TEXTURE_2D);
-		Rect rg; rg.center=1; rg.left=(int)(gx+gw*0.5f); rg.bot=(int)(gy+6);
-		ggprint16(&rg,0,0x00ffe94f,"Gold: %d",playerGold);
+		float gw = 134.0f, gh = 30.0f;
+		float gx = g.xres - gw - 8.0f, gy = g.yres - gh - 8.0f;
+		draw_rounded_rect_filled(gx, gy, gw, gh, 7.0f, 0.50f, 0.36f, 0.01f, 0.95f);
+		draw_rounded_rect_outline(gx, gy, gw, gh, 7.0f, 1.5f, 1.0f, 0.82f, 0.15f, 0.9f);
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		Rect rg; rg.center=1; rg.left=(int)(gx+gw*0.5f); rg.bot=(int)(gy+8);
+		ggprint16(&rg, 0, 0x00ffe94f, "Gold: %d", playerGold);
+		glDisable(GL_BLEND);
 	}
 
-	for (int k=0;k<PACH_BUCKETS;k++){
-		float lx = (pach_bkt_x[k] + pach_bkt_x[k+1]) * 0.5f;
-		Rect rb; rb.center=1; rb.left=(int)lx; rb.bot=(int)(BOARD_B+8);
-		unsigned int col = (k==3) ? 0x00aaddff : 0x00ffffff;
-		ggprint16(&rb,0,col,"%s",PACH_LABELS[k]);
+	// Stats panel (left side)
+	{
+		float spW = BOARD_L - 12.0f;
+		float spH = 130.0f;
+		float spX = 4.0f;
+		float spY = g.yres - spH - 4.0f;
+		if (spW > 20.0f) {
+			draw_rounded_rect_filled(spX, spY, spW, spH, 8.0f, 0.05f, 0.08f, 0.14f, 0.90f);
+			draw_rounded_rect_outline(spX, spY, spW, spH, 8.0f, 1.5f, 0.25f, 0.50f, 0.85f, 0.7f);
+			draw_corner_brackets(spX, spY, spW, spH, 8.0f, 1.5f, 0.3f, 0.6f, 1.0f, 0.8f);
+
+			// header bar
+			draw_rounded_rect_filled(spX, spY+spH-26.0f, spW, 26.0f, 8.0f, 0.10f, 0.22f, 0.45f, 0.95f);
+			glColor4f(0.10f, 0.22f, 0.45f, 0.95f);
+			glBegin(GL_QUADS);
+				glVertex2f(spX, spY+spH-26.0f); glVertex2f(spX, spY+spH-13.0f);
+				glVertex2f(spX+spW, spY+spH-13.0f); glVertex2f(spX+spW, spY+spH-26.0f);
+			glEnd();
+
+			glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			Rect rh; rh.center=0; rh.left=(int)(spX+8); rh.bot=(int)(spY+spH-20);
+			ggprint16(&rh, 0, 0x00cce6ff, "PACHINKO");
+			draw_hline(spX+4, spY+spH-28, spW-8, 1.0f, 0.3f, 0.6f, 1.0f, 0.5f);
+
+			Rect rs; rs.center=0; rs.left=(int)(spX+8);
+			rs.bot = (int)(spY + spH - 48);
+			ggprint16(&rs, 22, 0x00ffe94f, "Won: %d", pach_total_won);
+			ggprint16(&rs, 22, 0x0088aacc, "Balls: %d", pach_balls_used);
+
+			// cost hint
+			float hintY = spY + 14.0f;
+			draw_hline(spX+4, hintY+18, spW-8, 1.0f, 0.25f, 0.45f, 0.7f, 0.4f);
+			rs.bot = (int)(hintY);
+			ggprint16(&rs, 0, 0x00667799, "[Click] -%dg", PACH_COST);
+			glDisable(GL_BLEND);
+		}
 	}
 
-	if (playerGold < PACH_COST && !slot_active){
+	// ESC hint badge bottom-left below stats
+	{
+		float bw = BOARD_L - 12.0f, bh = 22.0f;
+		float bx = 4.0f, by = 4.0f;
+		if (bw > 20.0f) {
+			draw_rounded_rect_filled(bx, by, bw, bh, 5.0f, 0.08f, 0.08f, 0.14f, 0.85f);
+			draw_rounded_rect_outline(bx, by, bw, bh, 5.0f, 1.0f, 0.25f, 0.40f, 0.65f, 0.6f);
+			glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			Rect rb; rb.center=0; rb.left=(int)(bx+6); rb.bot=(int)(by+4);
+			ggprint16(&rb, 0, 0x00556677, "[ESC] Back");
+			glDisable(GL_BLEND);
+		}
+	}
+
+	// "Not enough gold" warning
+	if (playerGold < PACH_COST && !slot_active) {
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		Rect rw; rw.center=1; rw.left=g.xres/2; rw.bot=(int)(BOARD_T+10);
-		ggprint16(&rw,0,0x00ff4444,"Not enough gold! (need %d)",PACH_COST);
+		ggprint16(&rw, 0, 0x00ff4444, "Not enough gold! (need %d)", PACH_COST);
+		glDisable(GL_BLEND);
 	}
 
-	if (pach_show_result && pach_result_timer > 0.0f && !slot_active){
-		Rect rf; rf.center=1; rf.left=g.xres/2; rf.bot=(int)(BOARD_T+30);
+	// Bucket result popup
+	if (pach_show_result && pach_result_timer > 0.0f && !slot_active) {
+		float popW = 160.0f, popH = 34.0f;
+		float popX = (g.xres-popW)*0.5f, popY = BOARD_T + 8.0f;
+		float alpha = fminf(pach_result_timer / 0.4f, 1.0f);
 		unsigned int col = (pach_last_payout > 0) ? 0x0088ff44 : 0x00ff4f4f;
-		if (pach_last_payout > 0) ggprint16(&rf,0,col,"+%d gold!",pach_last_payout);
-		else                      ggprint16(&rf,0,col,"Miss!");
+		float cr = (pach_last_payout > 0) ? 0.05f : 0.25f;
+		float cg = (pach_last_payout > 0) ? 0.32f : 0.04f;
+		float cb = (pach_last_payout > 0) ? 0.08f : 0.04f;
+		draw_rounded_rect_filled(popX, popY, popW, popH, 8.0f, cr, cg, cb, 0.90f*alpha);
+		draw_rounded_rect_outline(popX, popY, popW, popH, 8.0f, 1.5f,
+			(pach_last_payout > 0) ? 0.3f : 1.0f,
+			(pach_last_payout > 0) ? 1.0f : 0.3f,
+			(pach_last_payout > 0) ? 0.3f : 0.3f, 0.9f*alpha);
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		Rect rf; rf.center=1; rf.left=(int)(popX+popW*0.5f); rf.bot=(int)(popY+10);
+		if (pach_last_payout > 0) ggprint16(&rf, 0, col, "+%d gold!", pach_last_payout);
+		else                      ggprint16(&rf, 0, col, "No payout");
+		glDisable(GL_BLEND);
 	}
 
 	glDisable(GL_BLEND);
@@ -2276,25 +2441,16 @@ void render_pachinko()
 void render()
 {
 	if (gameState == MENU) {
-	glClear(GL_COLOR_BUFFER_BIT);
-	glColor3f(1.0, 1.0, 1.0);
-	glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
-	glBegin(GL_QUADS);
-		glTexCoord2f(g.tex.xc[0], g.tex.yc[1]);
-        glVertex2i(0,      0);
-		glTexCoord2f(g.tex.xc[0], g.tex.yc[0]);
-        glVertex2i(0,      g.yres);
-		glTexCoord2f(g.tex.xc[1], g.tex.yc[0]);
-        glVertex2i(g.xres, g.yres);
-		glTexCoord2f(g.tex.xc[1], g.tex.yc[1]);
-        glVertex2i(g.xres, 0);
-	glEnd();
-
-    render_box();
-	render_menu();
-    render_logo();
-	render_senor_pescado();
-    //ggprint16(&rFPS, 12, 0x00ffffff, "fps: %i", g.fps);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glColor3f(1,1,1);
+		glBindTexture(GL_TEXTURE_2D, g.tex.backTexture);
+		glBegin(GL_QUADS);
+			glTexCoord2f(g.tex.xc[0],g.tex.yc[1]); glVertex2i(0,      0);
+			glTexCoord2f(g.tex.xc[0],g.tex.yc[0]); glVertex2i(0,      g.yres);
+			glTexCoord2f(g.tex.xc[1],g.tex.yc[0]); glVertex2i(g.xres, g.yres);
+			glTexCoord2f(g.tex.xc[1],g.tex.yc[1]); glVertex2i(g.xres, 0);
+		glEnd();
+		render_box(); render_menu(); render_logo(); render_senor_pescado();
 	}
 	else if (gameState == PLAY) {
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -2309,12 +2465,21 @@ void render()
 		render_boat();
 		render_fish_slot(0);
 		render_fish_slot(1);
+		// bottom hint bar
+		float barH = 40.0f;
+		glDisable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
+		glBegin(GL_QUADS);
+			glVertex2f(0,0); glVertex2f(0,barH); glVertex2f(g.xres,barH); glVertex2f(g.xres,0);
+		glEnd();
+		glColor4f(0.2f, 0.55f, 1.0f, 0.4f); glLineWidth(1.0f);
+		glBegin(GL_LINES); glVertex2f(0,barH); glVertex2f(g.xres,barH); glEnd();
+		glDisable(GL_BLEND);
 		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		Rect rCast; rCast.center=1; rCast.left=g.xres/2; rCast.bot=60;
-		ggprint16(&rCast,0,0x00ffffff,"[ Click to cast your rod ]");
-		Rect rPach; rPach.center=1; rPach.left=g.xres/2; rPach.bot=35;
-		ggprint16(&rPach,0,0x00ffe94f,"[ P ] Pachinko   [ S ] Shop");
+		Rect rCast; rCast.center=1; rCast.left=g.xres/2; rCast.bot=15;
+		ggprint16(&rCast, 0, 0x00aaccee, "[Click] Cast rod     [P] Pachinko     [S] Shop");
 		glDisable(GL_BLEND);
 	}
 	else if (gameState == FISHING) {
@@ -2330,10 +2495,20 @@ void render()
 		render_boat();
 		render_fish_slot(0);
 		render_fish_slot(1);
-		if (fishingPhase==PHASE_MINIGAME || fishingPhase==PHASE_HOOKED)
+		if (fishingPhase == PHASE_MINIGAME || fishingPhase == PHASE_HOOKED)
 			render_skill_check();
 		render_bite_alert();
 		render_catch_screen();
+
+		// ESC hint badge top-left
+		float bw=140.0f, bh=28.0f, bx=6.0f, by=g.yres-bh-6.0f;
+		draw_rounded_rect_filled(bx, by, bw, bh, 5.0f, 0.05f, 0.08f, 0.15f, 0.80f);
+		draw_rounded_rect_outline(bx, by, bw, bh, 5.0f, 1.0f, 0.25f, 0.50f, 0.8f, 0.6f);
+		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		Rect rb; rb.center=1; rb.left=(int)(bx+bw/2); rb.bot=(int)(by+6);
+		ggprint16(&rb, 0, 0x00c8e6ff, "[ESC] Leave");
+		glDisable(GL_BLEND);
 	}
 	else if (gameState == SHOPPING) {
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -2349,9 +2524,8 @@ void render()
 		render_shop_back_button();
 	}
 	else if (gameState == CHARACTER) {
-    	render_character_select();
+		render_character_select();
 	}
-
 	else if (gameState == PACHINKO) {
 		render_pachinko();
 	}
