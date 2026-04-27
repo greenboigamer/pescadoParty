@@ -1222,8 +1222,7 @@ void physics()
 
 		for (int s = 0; s < 2; s++) {
 			int fi = slotFish[s];
-			if (!slotRemoved[s]) {
-				slotBob[s] += FISH_BOB_SPEED[fi];
+			if (!slotRemoved[s] && !(fishingPhase != PHASE_WAITING && slotFish[s] == hookedFishIndex)) {				slotBob[s] += FISH_BOB_SPEED[fi];
 				slotX[s]   += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
 			}
 			float halfW = FISH_W[fi] / 2.0f;
@@ -1559,7 +1558,7 @@ void render_catch_screen()
 void render_skill_check()
 {
 	// ── Panel background ────────────────────────────────────────
-	float panW = 200.0f, panH = 230.0f;
+	float panW = 200.0f, panH = 290.0f;
 	float panX = g.xres - panW - 10.0f;
 	float panY = g.yres * 0.28f;
 
@@ -1569,8 +1568,7 @@ void render_skill_check()
 
 	// ── Reel progress bar ────────────────────────────────────────
 	float barW = panW - 24.0f, barH = 14.0f;
-	float barX = panX + 12.0f, barY = panY + 12.0f;
-	float prog = reelProgress / reelMax;
+	float barX = panX + 12.0f, barY = panY + panH - 54.0f;	float prog = reelProgress / reelMax;
 	if (prog > 1.0f) prog = 1.0f;
 	float br = (prog > 0.66f) ? 0.18f : 0.2f;
 	float bg_ = (prog > 0.66f) ? 0.8f  : 0.55f;
@@ -1587,7 +1585,7 @@ void render_skill_check()
 
 	// ── Skill check wheel ────────────────────────────────────────
 	float cx = panX + panW * 0.5f;
-	float cy = panY + panH * 0.55f;
+	float cy = panY + 145.0f;
 	float r  = 68.0f;
 	const int SEG = 120;
 
@@ -1670,13 +1668,13 @@ void render_skill_check()
 	glDisable(GL_BLEND);
 
 	// ── Bottom-left total caught badge ───────────────────────────
-	float badgeW = 160.0f, badgeH = 28.0f;
-	float badgeX = 8.0f, badgeY = g.yres - badgeH - 8.0f;
+	float badgeW = 140.0f, badgeH = 28.0f;
+	float badgeX = g.xres - badgeW - 8.0f, badgeY = g.yres - badgeH - 8.0f;
 	draw_rounded_rect_filled(badgeX, badgeY, badgeW, badgeH, 6.0f, 0.04f, 0.10f, 0.18f, 0.85f);
 	draw_rounded_rect_outline(badgeX, badgeY, badgeW, badgeH, 6.0f, 1.5f, 0.3f, 0.6f, 1.0f, 0.7f);
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	Rect rCorner; rCorner.center = 0; rCorner.left = (int)(badgeX + 10); rCorner.bot = (int)(badgeY + 8);
+	Rect rCorner; rCorner.center=1; rCorner.left=(int)(badgeX + badgeW/2); rCorner.bot=(int)(badgeY + 6);
 	ggprint16(&rCorner, 0, 0x00c8e6ff, "Caught: %d", totalCaught);
 	glDisable(GL_BLEND);
 }
@@ -1785,7 +1783,7 @@ void open_shop()
 	glDisable(GL_BLEND);
 
 	// inventory panel
-	float panW=300.0f, panH=180.0f, panX=10.0f, panY=(g.yres-panH)/2.0f;
+	float panW=300.0f, panH=180.0f, panX=490.0f, panY=(g.yres-250.0f);
 	float rowH = panH / NUM_FISH;
 	draw_rounded_rect_filled(panX, panY, panW, panH, 8.0f, 0.05f, 0.10f, 0.15f, 0.88f);
 
@@ -2022,7 +2020,7 @@ void render_slot_overlay()
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	Rect rTitle; rTitle.center=1; rTitle.left=(int)(panX+panW*0.5f); rTitle.bot=(int)(panY+panH-32);
-	ggprint16(&rTitle, 0, 0x00110800, "~ FISH SLOT MACHINE ~");
+	ggprint16(&rTitle, 0, 0x00110800, "JACKPOT! TIME TO ROLL!");
 	glDisable(GL_BLEND);
 
 	// ── Reel windows ─────────────────────────────────────────────
@@ -2127,25 +2125,20 @@ void render_slot_overlay()
 	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	// payout legend
-	Rect rLeg; rLeg.center=1; rLeg.left=(int)(panX+panW*0.5f);
-	rLeg.bot=(int)(panY+36); ggprint16(&rLeg, 0, 0x00cccccc, "Exo=5  Grie=25  Milk=100");
-	rLeg.bot=(int)(panY+18); ggprint16(&rLeg, 0, 0x00ff8888, "Reyn=500    DEATH=10000!");
-
 	// spin progress bar or result
 	if (slot_spinning) {
 		float prog = 1.0f - (slot_spin_timer/slot_spin_dur);
 		// draw bar inside panel at bottom
 		draw_progress_bar(panX+20, panY+56, panW-40, 10.0f, prog,
 			1.0f, 0.68f, 0.08f, 0.12f, 0.04f, 0.04f);
-		Rect rs; rs.center=1; rs.left=(int)(panX+panW*0.5f); rs.bot=(int)(panY+72);
+		Rect rs; rs.center=1; rs.left=(int)(panX+panW*0.5f); rs.bot=(int)(panY + 200);
 		ggprint16(&rs, 0, 0x00ffaa44, "Spinning...");
 	} else if (slot_result_shown) {
 		int sym0=slot_reel_strip[0][slot_reels[0]];
 		int sym1=slot_reel_strip[1][slot_reels[1]];
 		int sym2=slot_reel_strip[2][slot_reels[2]];
 		bool threeMatch = (sym0==sym1 && sym1==sym2);
-		Rect rr; rr.center=1; rr.left=(int)(panX+panW*0.5f); rr.bot=(int)(panY+72);
+		Rect rr; rr.center=1; rr.left=(int)(panX+panW*0.5f); rr.bot=(int)(panY+35);
 		if (threeMatch && slot_result >= 10000) {
 			float pulse = fabsf(sinf((float)clock()/80.0f));
 			unsigned int jcol = (pulse > 0.5f) ? 0x00ffee00 : 0x00ff8800;
@@ -2156,7 +2149,7 @@ void render_slot_overlay()
 		} else {
 			ggprint16(&rr, 0, 0x00aaddff, "Min payout: +%d gold", slot_result);
 		}
-		rr.bot=(int)(panY+54);
+		rr.bot=(int)(panY+10);
 		ggprint16(&rr, 0, 0x00888888, "[Click or ESC] to continue");
 	}
 	glDisable(GL_BLEND);
@@ -2485,7 +2478,7 @@ void render()
 		glDisable(GL_BLEND);
 		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		Rect rCast; rCast.center=1; rCast.left=g.xres/2; rCast.bot=20;
+		Rect rCast; rCast.center=1; rCast.left=g.xres/2; rCast.bot=15;
 		ggprint16(&rCast, 0, 0x00aaccee, "[Click] Cast rod     [P] Pachinko     [S] Shop");
 		glDisable(GL_BLEND);
 	}
@@ -2508,13 +2501,13 @@ void render()
 		render_catch_screen();
 
 		// ESC hint badge top-left
-		float bw=120.0f, bh=22.0f, bx=6.0f, by=g.yres-bh-6.0f;
+		float bw=140.0f, bh=28.0f, bx=6.0f, by=g.yres-bh-6.0f;
 		draw_rounded_rect_filled(bx, by, bw, bh, 5.0f, 0.05f, 0.08f, 0.15f, 0.80f);
 		draw_rounded_rect_outline(bx, by, bw, bh, 5.0f, 1.0f, 0.25f, 0.50f, 0.8f, 0.6f);
 		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		Rect rb; rb.center=0; rb.left=(int)(bx+8); rb.bot=(int)(by+4);
-		ggprint16(&rb, 0, 0x00556688, "[ESC] Leave");
+		Rect rb; rb.center=1; rb.left=(int)(bx+bw/2); rb.bot=(int)(by+6);
+		ggprint16(&rb, 0, 0x00c8e6ff, "[ESC] Leave");
 		glDisable(GL_BLEND);
 	}
 	else if (gameState == SHOPPING) {
