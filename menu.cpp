@@ -72,7 +72,7 @@ const float FISH_W[NUM_FISH]         = { 150.0f, 120.0f, 130.0f, 140.0f, 125.0f 
 const float FISH_H[NUM_FISH]         = { 120.0f, 100.0f, 110.0f, 110.0f, 105.0f };
 
 const char* FISH_NAMES[NUM_FISH] = {
-    "Exo Trout", "Grieselly Fish", "Death Snapper", "Milking Fish", "Reynboh Pescado"
+    "Milking Fish", "Reynboh Pescado", "Death Snapper", "Exo Trout", "Grieselly Fish"
 };
 
 const int FISH_PRICES[NUM_FISH] = { 5, 20, 35, 40, 10 };
@@ -253,8 +253,6 @@ public:
 	GLuint kianDipTex;
 	GLuint winDipTex;
 
-	GLuint kianTex;
-	GLuint simonTex;
 	float logoAngle;
 	Global() {
 		xres=640, yres=480;
@@ -1176,6 +1174,24 @@ void physics()
 
 	if (gameState == PLAY || gameState == FISHING) {
 		boatBobTime += boatBobSpeed;
+	}
+
+	if (gameState == PLAY) {
+		for (int s = 0; s < 2; s++) {
+			int fi = slotFish[s];
+			slotBob[s] += FISH_BOB_SPEED[fi];
+			if (!slotRemoved[s])
+				slotX[s] += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
+			float halfW = FISH_W[fi] / 2.0f;
+			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres) : (slotX[s] + halfW < 0);
+			if (exited) {
+				int next = (fi + 2) % NUM_FISH;
+				slotFish[s] = next; slotBob[s] = 0.0f;
+				slotRemoved[s] = false;
+				float nextHalfW = FISH_W[next] / 2.0f;
+				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
+			}
+		}
 	}
 
 	// REMOVED: entire if (gameState == PLAY) fish movement block
