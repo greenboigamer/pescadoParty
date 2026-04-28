@@ -134,7 +134,7 @@ static const int   PACH_PEG_ROWS  = 6;
 static const int   PACH_PEG_COLS  = 7;
 static const int   PACH_BUCKETS   = 7;
 static const int   PACH_PAYOUT[PACH_BUCKETS]  = { 0, 5, 10, 0, 10, 5, 0 };
-static const char* PACH_LABELS[PACH_BUCKETS]  = { "0", "5", "10", "SLOT!", "10", "5", "0" };
+static const char* PACH_LABELS[PACH_BUCKETS]  = { "0", "5", "10", "", "10", "5", "0" };
 
 static const float PACH_BKT_WEIGHTS[PACH_BUCKETS] = { 2.0f, 1.6f, 1.3f, 0.4f, 1.3f, 1.6f, 2.0f };
 static float pach_bkt_x[PACH_BUCKETS + 1];
@@ -162,6 +162,7 @@ static float BOARD_W, BOARD_H, BKT_W;
 static float pach_aim_x      = 0.0f;
 static int   pach_total_won  = 0;
 static int   pach_balls_used = 0;
+static int   pach_gold_spent = 0;
 static bool  pach_show_result   = false;
 static float pach_result_timer  = 0.0f;
 static int   pach_last_payout   = 0;
@@ -509,23 +510,19 @@ static void draw_progress_bar(float x, float y, float w, float h,
 // ============================================================
 static void slot_build_strips()
 {
-	for (int r = 0; r < 3; r++) {
-		int idx = 0;
-		for (int s = 0; s < SLOT_NUM_SYMS && idx < REEL_LEN; s++) {
-			int count = (int)SLOT_SYM_WEIGHT[s];
-			if (count < 1) count = 1;
-			if (s == 2) count = 1;
-			for (int k = 0; k < count && idx < REEL_LEN; k++)
-				slot_reel_strip[r][idx++] = s;
-		}
-		while (idx < REEL_LEN) slot_reel_strip[r][idx++] = 0;
-		for (int i = REEL_LEN - 1; i > 0; i--) {
-			int j = rand() % (i + 1);
-			int tmp = slot_reel_strip[r][i];
-			slot_reel_strip[r][i] = slot_reel_strip[r][j];
-			slot_reel_strip[r][j] = tmp;
-		}
-	}
+    for (int r = 0; r < 3; r++) {
+        // Fill strip by cycling 0-4 repeatedly
+        for (int i = 0; i < REEL_LEN; i++)
+            slot_reel_strip[r][i] = i % SLOT_NUM_SYMS;
+        // Shuffle in pairs so order is random but coverage stays even
+        for (int i = REEL_LEN - 1; i > 0; i--) {
+            int j = (i / SLOT_NUM_SYMS) * SLOT_NUM_SYMS + rand() % SLOT_NUM_SYMS;
+            if (j >= REEL_LEN) j = rand() % REEL_LEN;
+            int tmp = slot_reel_strip[r][i];
+            slot_reel_strip[r][i] = slot_reel_strip[r][j];
+            slot_reel_strip[r][j] = tmp;
+        }
+    }
 }
 
 void slot_start()
@@ -948,6 +945,7 @@ void enter_pachinko()
 	pach_n            = 0;
 	pach_total_won    = 0;
 	pach_balls_used   = 0;
+	pach_gold_spent   = 0;
 	pach_show_result  = false;
 	pach_result_timer = 0.0f;
 	pach_last_payout  = 0;
@@ -974,6 +972,7 @@ static void pach_launch_ball(float x)
 		if (!pach_balls[i].active) {
 			playerGold -= PACH_COST;
 			pach_balls_used++;
+			pach_gold_spent += PACH_COST;
 			PachBall &b   = pach_balls[i];
 			b.active      = true;
 			b.radius      = PACH_BALL_R;
@@ -1376,6 +1375,18 @@ void physics()
 					printf("[PACHINKO] Bucket %d → +%d gold. Total: %d\n", bkt, won, playerGold);
 				}
 				fflush(stdout);
+				// Purge landed balls once 10+ have settled to avoid clutter
+				{
+					int landed_count = 0;
+					for (int i = 0; i < pach_n; i++)
+						if (pach_balls[i].active && pach_balls[i].landed_bucket >= 0)
+							landed_count++;
+					if (landed_count >= 10) {
+						for (int i = 0; i < pach_n; i++)
+							if (pach_balls[i].active && pach_balls[i].landed_bucket >= 0)
+								pach_balls[i].active = false;
+					}
+				}
 			}
 		}
 	}
@@ -2127,28 +2138,60 @@ void render_slot_overlay()
 		// reel border
 		draw_rounded_rect_outline(rx, ry, reelW, reelH, 4.0f, 2.5f, 0.22f, 0.06f, 0.06f, 1.0f);
 
-		// fish image inside reel
-		int symIdx;
-		if (slot_spinning) {
-			int offset = (int)(slot_reel_offset[r]/15.0f) % REEL_LEN;
-			symIdx = slot_reel_strip[r][offset];
-		} else {
-			symIdx = slot_reel_strip[r][slot_reels[r]];
-		}
-		GLuint fishTex = get_slot_tex(symIdx);
+		// fish image inside reel — scroll through symbols while spinning
 		float imgPad=8.0f, imgW=reelW-imgPad*2, imgH=reelH-imgPad*2;
-		float imgX=reelXs[r]-imgW*0.5f, imgY=reelCY-imgH*0.5f;
-		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4f(1,1,1, slot_spinning ? 0.5f : 1.0f);
-		glBindTexture(GL_TEXTURE_2D, fishTex);
-		glBegin(GL_QUADS);
-			glTexCoord2f(0,1); glVertex2f(imgX,      imgY);
-			glTexCoord2f(0,0); glVertex2f(imgX,      imgY+imgH);
-			glTexCoord2f(1,0); glVertex2f(imgX+imgW, imgY+imgH);
-			glTexCoord2f(1,1); glVertex2f(imgX+imgW, imgY);
-		glEnd();
-		glDisable(GL_TEXTURE_2D);
+		float imgX=reelXs[r]-imgW*0.5f;
+
+		if (slot_spinning) {
+			// scroll offset within one symbol height
+			float scroll = fmodf(slot_reel_offset[r], imgH);
+			// draw two adjacent symbols so the transition is seamless
+			for (int pass = 0; pass < 2; pass++) {
+				int stripPos = ((int)(slot_reel_offset[r] / imgH) + pass) % REEL_LEN;
+				if (stripPos < 0) stripPos += REEL_LEN;
+				int symIdx2 = slot_reel_strip[r][stripPos];
+				GLuint fishTex2 = get_slot_tex(symIdx2);
+				// y position: first symbol scrolls upward, second follows below
+				float symY = reelCY - imgH*0.5f + (pass * imgH) - scroll;
+				// only draw if within reel window
+				float clipTop    = reelCY + reelH*0.5f;
+				float clipBottom = reelCY - reelH*0.5f;
+				if (symY + imgH < clipBottom || symY > clipTop) continue;
+				// scissor-style clamp via tex coords
+				float t0 = 0.0f, t1 = 1.0f;
+				float y0 = symY, y1 = symY + imgH;
+				if (y0 < clipBottom) { t0 = (clipBottom - symY) / imgH; y0 = clipBottom; }
+				if (y1 > clipTop)    { t1 = 1.0f - (y1 - clipTop)    / imgH; y1 = clipTop; }
+				// flip tex coords: t0=bottom of texture (fish feet), t1=top
+				float tc_bot = 1.0f - t0, tc_top = 1.0f - t1;
+				glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				glColor4f(1,1,1,0.92f);
+				glBindTexture(GL_TEXTURE_2D, fishTex2);
+				glBegin(GL_QUADS);
+					glTexCoord2f(0, tc_bot); glVertex2f(imgX,      y0);
+					glTexCoord2f(0, tc_top); glVertex2f(imgX,      y1);
+					glTexCoord2f(1, tc_top); glVertex2f(imgX+imgW, y1);
+					glTexCoord2f(1, tc_bot); glVertex2f(imgX+imgW, y0);
+				glEnd();
+				glDisable(GL_TEXTURE_2D);
+			}
+		} else {
+			int symIdx = slot_reel_strip[r][slot_reels[r]];
+			GLuint fishTex = get_slot_tex(symIdx);
+			float imgY = reelCY - imgH*0.5f;
+			glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glColor4f(1,1,1,1.0f);
+			glBindTexture(GL_TEXTURE_2D, fishTex);
+			glBegin(GL_QUADS);
+				glTexCoord2f(0,1); glVertex2f(imgX,      imgY);
+				glTexCoord2f(0,0); glVertex2f(imgX,      imgY+imgH);
+				glTexCoord2f(1,0); glVertex2f(imgX+imgW, imgY+imgH);
+				glTexCoord2f(1,1); glVertex2f(imgX+imgW, imgY);
+			glEnd();
+			glDisable(GL_TEXTURE_2D);
+		}
 
 		// winning highlight pulse
 		if (!slot_spinning && slot_result_shown) {
@@ -2174,19 +2217,6 @@ void render_slot_overlay()
 				glDisable(GL_BLEND);
 			}
 		}
-
-		// label below reel
-		unsigned int col;
-		switch(symIdx){
-			case 2: col=0x00ff4444; break; case 4: col=0x00ff88ff; break;
-			case 3: col=0x0044ffaa; break; case 1: col=0x00ffcc44; break;
-			default: col=0x00aaddff; break;
-		}
-		glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		Rect rs; rs.center=1; rs.left=(int)reelXs[r]; rs.bot=(int)(reelCY-reelH*0.5f-16);
-		ggprint16(&rs, 0, col, "%s", SLOT_SYM_LABELS[symIdx]);
-		glDisable(GL_BLEND);
 	}
 
 	// ── Bottom info area ─────────────────────────────────────────
@@ -2441,7 +2471,7 @@ void render_pachinko()
 			Rect rs; rs.center=0; rs.left=(int)(spX+8);
 			rs.bot = (int)(spY + spH - 48);
 			ggprint16(&rs, 22, 0x00ffe94f, "Won: %d", pach_total_won);
-			ggprint16(&rs, 22, 0x0088aacc, "Balls: %d", pach_balls_used);
+			ggprint16(&rs, 22, 0x0088aacc, "Spent: %d", pach_gold_spent);
 
 			// cost hint
 			float hintY = spY + 14.0f;
