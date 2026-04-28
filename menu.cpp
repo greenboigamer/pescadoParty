@@ -1605,14 +1605,14 @@ void render_skill_check()
 	glEnd();
 
 	// hit zone (green arc)
-	glLineWidth(9.0f); glColor4f(0.18f, 0.80f, 0.44f, 1.0f);
+	glLineWidth(9.0f); glColor4f(1.0f, 0.85f, 0.15f, 1.0f);
 	int zSegs = max(2,(int)(SEG * SC_ZONE_SIZE / (2*M_PI)));
 	glBegin(GL_LINE_STRIP);
 	for (int i=0;i<=zSegs;i++){float a=scZoneStart+(float)i/zSegs*SC_ZONE_SIZE; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
 	glEnd();
 
 	// perfect zone (gold arc)
-	glLineWidth(9.0f); glColor4f(1.0f, 0.85f, 0.15f, 1.0f);
+	glLineWidth(9.0f); glColor4f(0.18f, 0.80f, 0.44f, 1.0f);
 	int pSegs = max(2,(int)(SEG * SC_PERFECT_SIZE / (2*M_PI)));
 	glBegin(GL_LINE_STRIP);
 	for (int i=0;i<=pSegs;i++){float a=scZoneStart+(float)i/pSegs*SC_PERFECT_SIZE; glVertex2f(cx+cosf(a)*r,cy+sinf(a)*r);}
