@@ -40,13 +40,14 @@ GameState gameState = MENU;
 // ============================================================
 // IMAGES
 // ============================================================
-Image img[16] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png",
+Image img[19] = {"./assets/images/fish.jpg", "./assets/images/background_fishing.png",
     "./assets/images/senorpescado.png", "./assets/images/logo.png", "./assets/images/gordoni.png",
     "./assets/images/milking_fish.png", "./assets/images/reynboh_pescado.png",
     "./assets/images/death_snapper.png", "./assets/images/exo_trout.png",
     "./assets/images/grieselly_fish.png", "./assets/images/dip_dip.png",
     "./assets/images/shop.png", "./assets/images/brown_cow_in_a_suit.png",
-    "./assets/images/win.png", "./assets/images/kian.png", "./assets/images/simon.png"};
+    "./assets/images/win.png", "./assets/images/kian.png", "./assets/images/simon.png", "./assets/images/simon_dip.png", 
+	"./assets/images/kian_dip.png", "./assets/images/win_dip.png" };
 
 //character selection
 const int NUM_CHARACTERS = 4;
@@ -246,6 +247,12 @@ public:
 	GLuint shopTex;
 	GLuint brownTex;
 	GLuint winTex;
+    GLuint kianTex;
+    GLuint simonTex;
+	GLuint simonDipTex;
+	GLuint kianDipTex;
+	GLuint winDipTex;
+
 	GLuint kianTex;
 	GLuint simonTex;
 	float logoAngle;
@@ -267,6 +274,9 @@ public:
 		winTex   = 0;
 		kianTex  = 0;
 		simonTex = 0;
+		winDipTex = 0;
+		simonDipTex = 0;
+		kianDipTex = 0;
 	}
 } g;
 
@@ -767,6 +777,41 @@ void init_opengl(void)
 		GL_RGBA, GL_UNSIGNED_BYTE, alphaDataSimon);
 	free(alphaDataSimon);
 
+	unsigned char *alphaDatasimonDip = buildAlphaData(&img[16]);
+	glGenTextures(1, &g.simonDipTex);
+	glBindTexture(GL_TEXTURE_2D, g.simonDipTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[16].width, img[16].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDatasimonDip);
+	free(alphaDatasimonDip);
+
+	unsigned char *alphaDatakianDip = buildAlphaData(&img[17]);
+	glGenTextures(1, &g.kianDipTex);
+	glBindTexture(GL_TEXTURE_2D, g.kianDipTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[17].width, img[17].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDatakianDip);
+	free(alphaDatakianDip);
+
+	unsigned char *alphaDatawinDip = buildAlphaData(&img[18]);
+	glGenTextures(1, &g.winDipTex);
+	glBindTexture(GL_TEXTURE_2D, g.winDipTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img[18].width, img[18].height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, alphaDatawinDip);
+	free(alphaDatawinDip);
+
+
+
+
+
+
 	initialize_fonts();
 
 	slotFish[0] = 0; slotFish[1] = 1;
@@ -1129,26 +1174,11 @@ void physics()
 		if (g.logoAngle >= 360.0f) g.logoAngle -= 360.0f;
 	}
 
-	if (gameState == PLAY || gameState == FISHING)
+	if (gameState == PLAY || gameState == FISHING) {
 		boatBobTime += boatBobSpeed;
-
-	if (gameState == PLAY) {
-		for (int s = 0; s < 2; s++) {
-			int fi = slotFish[s];
-			slotBob[s] += FISH_BOB_SPEED[fi];
-			if (!slotRemoved[s])
-				slotX[s] += (s == 0) ? FISH_SPEED[fi] : -FISH_SPEED[fi];
-			float halfW = FISH_W[fi] / 2.0f;
-			bool exited = (s == 0) ? (slotX[s] - halfW > g.xres) : (slotX[s] + halfW < 0);
-			if (exited) {
-				int next = (fi + 2) % NUM_FISH;
-				slotFish[s] = next; slotBob[s] = 0.0f;
-				slotRemoved[s] = false;
-				float nextHalfW = FISH_W[next] / 2.0f;
-				slotX[s] = (s == 0) ? -nextHalfW : g.xres + nextHalfW;
-			}
-		}
 	}
+
+	// REMOVED: entire if (gameState == PLAY) fish movement block
 
 	if (gameState == FISHING) {
 		static struct timeval lastTime = {0, 0};
@@ -1848,25 +1878,47 @@ GLuint get_character_tex(int charIndex) {
 }
 
 void render_boat() {
-	float scale = 4.0f;
-	int charImgIndex[NUM_CHARACTERS] = { 4, 13, 14, 15 };
-	int activeIndex = (gameState == FISHING) ? 10 : charImgIndex[selectedCharacter];
-	float w = img[activeIndex].width*scale, h = img[activeIndex].height*scale;
-	float cx = g.xres/2.0f, cy = (g.yres/2.0f)-80.0f;
-	float bob = sinf(boatBobTime)*boatBobAmp;
-	GLuint activeTex = (gameState == FISHING) ? g.dipDipTex : get_character_tex(selectedCharacter);
-	glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND);
-	glColor4f(1.0, 1.0, 1.0, 1.0);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glBindTexture(GL_TEXTURE_2D, activeTex);
-	glPushMatrix(); glTranslatef(cx, cy+bob, 0.0f);
-	glBegin(GL_QUADS);
-		glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2,-h/2);
-		glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2, h/2);
-		glTexCoord2f(1.0f, 0.0f); glVertex2f( w/2, h/2);
-		glTexCoord2f(1.0f, 1.0f); glVertex2f( w/2,-h/2);
-	glEnd();
-	glDisable(GL_BLEND); glPopMatrix();
+    float scale = 4.0f;
+    // Character img indices: 0=gordoni(4), 1=win(13), 2=kian(14), 3=simon(15)
+    int charImgIndex[NUM_CHARACTERS] = { 4, 13, 14, 15 };
+    int activeIndex = (gameState == FISHING) ? 10 : charImgIndex[selectedCharacter];
+
+    float w = img[activeIndex].width  * scale;
+    float h = img[activeIndex].height * scale;
+    float cx = g.xres / 2.0f;
+    float cy = (g.yres / 2.0f) - 80.0f;
+    float bob = sinf(boatBobTime) * boatBobAmp;
+
+    GLuint activeTex;
+	
+	if (gameState == FISHING) {
+    // Show character-specific dip texture
+    	switch (selectedCharacter) {
+			case 0: activeTex = g.dipDipTex;    break;  // Gordoni
+			case 1: activeTex = g.winDipTex;    break;  // Win
+			case 2: activeTex = g.kianDipTex;   break;  // Kian
+			case 3: activeTex = g.simonDipTex;  break;  // Simon
+			default: activeTex = g.dipDipTex;   break;
+		}
+	} else {
+    activeTex = get_character_tex(selectedCharacter);
+	}
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glColor4f(1.0, 1.0, 1.0, 1.0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, activeTex);
+    glPushMatrix();
+    glTranslatef(cx, cy + bob, 0.0f);
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(-w/2, -h/2);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(-w/2,  h/2);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f( w/2,  h/2);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f( w/2, -h/2);
+    glEnd();
+    glDisable(GL_BLEND);
+    glPopMatrix();
 }
 
 void render_character_select()
