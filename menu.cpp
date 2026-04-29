@@ -1172,6 +1172,12 @@ int check_keys(XEvent *e)
 		}
 	}
 
+	if ((key == XK_x || key == XK_X) && gameState == PACHINKO) {
+		if (!slot_active) {
+			slot_start();
+		}
+	}
+	
 	// Main menu navigation
 	if (gameState == MENU) {
 		if (key == XK_Up || key == XK_w)
